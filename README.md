@@ -1,19 +1,23 @@
 # Parametric drawer box
 
 A rounded, parametric OpenSCAD box for drawer organization, with internal
-finger-pull ledges and an optional sliding lid with engraved robot artwork.
+finger-pull ledges, a locating base for lidless stacking, and an optional
+sliding lid with engraved robot artwork.
 The model uses millimeters and is compatible with OpenSCAD 2021.01.
 
 The default box is **160 x 95 x 50 mm** (outside length, width, height).
 With `withLid=false`, its rounded walls reach the full 50 mm height and end
 in a flat, slot-free rim: no sliding-lid rails or grooves are generated.
+With `withStacking=true` (the default), the bottom 3 mm steps inward to
+locate inside another lidless box. Its shoulder rests on the lower rim,
+keeping the boxes aligned without changing the outside dimensions.
 `pullLedges="both"` adds a ledge inside each short end wall.
 
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| `round_box_drawer.scad` | Parametric box, internal pull ledges, optional sliding lid, and artwork engraving. |
+| `round_box_drawer.scad` | Parametric stackable box, internal pull ledges, optional sliding lid, and artwork engraving. |
 | `robot-relief.svg` | Robot linework imported for the engraved lid. Keep it next to the SCAD file. |
 | `README.md` | Parameters, usage, and printing guidance. |
 
@@ -28,7 +32,8 @@ does not import it. Set `withLidArtwork=false` for an undecorated lid.
 2. Adjust the parameters at the top of the source or in the Customizer.
    Press **F5** to preview after changes.
 3. For the default lidless box, leave `withLid=false` and select
-   `itemsShown="box"` or `"both"`.
+   `itemsShown="box"` or `"both"`. Leave `withStacking=true` for the locating
+   base, or set it to `false` to restore the original full-width flat base.
 4. For a sliding-lid box, set `withLid=true`. This restores the lid rails
    and the separate sliding lid. With the default `withLidArtwork=true`,
    the robot is engraved 0.5 mm into the lid's upper face, not raised.
@@ -63,7 +68,33 @@ All lengths below are in millimeters. Defaults are those in the SCAD file.
 | `boxHeight` | `50` | Overall box height; lidless walls retain this full height. |
 | `cornerRadius` | `5` | Outside corner radius in plan view. |
 | `wallThickness` | `1` | Side-wall thickness. |
-| `bottomThickness` | `2` | Floor thickness. |
+| `bottomThickness` | `2` | Floor thickness above the base shoulder when stacking is enabled; otherwise measured from the build plate. |
+
+### Lidless stacking
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `withStacking` | `true` | Add a stepped locating base when `withLid=false`. Ignored for sliding-lid boxes. |
+| `stackingDepth` | `3` | Height of the inset base and its insertion depth into the box below. |
+| `stackingClearance` | `0.25` | Per-side gap between the locating base and the lower box's inner wall. |
+
+Stack boxes with the same length, width, corner radius, and wall thickness.
+The base is inset by `wallThickness + stackingClearance` on every side,
+including the rounded corners. The full-width shoulder above it bears on
+the lower box's rim; the inset base prevents sideways sliding, not lifting.
+No lid or separate stacking part is needed.
+
+The base is solid and lies flat at Z=0 for printing. The interior floor
+moves up to `bottomThickness + stackingDepth` (5 mm by default), reducing
+usable internal height by `stackingDepth`. The outside height remains
+`boxHeight`. Each additional identical box adds
+`boxHeight - stackingDepth` to the stack height: two default boxes are
+97 mm tall. Leave the top `stackingDepth` of the lower box clear of contents.
+Unstack boxes to reach their contents and internal pull ledges.
+
+Stacking geometry is disabled automatically with `withLid=true`, even if
+the sliding lid is not displayed. Those boxes retain their original base
+and rails; this locating fit is intended for the lidless configuration.
 
 ### Lid
 
@@ -121,6 +152,13 @@ require adjusting `artworkAspect` inside `lidArtwork()`.
 The source checks that positive wall thickness fits inside the box, that
 the positive floor thickness is below the box height, and that the corner
 radius exceeds the wall thickness while fitting within the footprint.
+Enabled stacking requires positive depth and clearance, room above the
+raised floor, and a base inset smaller than the corner radius that leaves
+positive base dimensions. The inserted base must clear the lower box's
+raised floor by at least 0.5 mm:
+`boxHeight >= bottomThickness + 2*stackingDepth + 0.5`.
+Pull ledges must be at least
+`stackingDepth + 0.5` below the rim so the upper box's base clears them.
 With a lid enabled, the lid and rails must fit above the floor, and
 `lidEdgeThickness` must be between zero and `lidThickness`.
 
@@ -129,6 +167,8 @@ offset. Their width must fit between the rounded end-wall corners. Their
 combined projection must leave internal space, and their undersides must
 remain at least 0.5 mm above the floor. With a lid enabled, `pullTopOffset`
 must be at least `lidThickness + wallThickness + 0.5` to clear the rails.
+For stackable boxes, the underside clearance is measured from the raised
+interior floor.
 
 For an engraved lid, the depth must be positive and less than
 `lidThickness`; margins and line growth must be nonnegative and leave room
@@ -142,8 +182,9 @@ face upward. Inspect both parts in your slicer before printing. The lid
 is displayed at negative Y in OpenSCAD; center each exported part on the
 build plate as needed.
 
-The sloped ledge undersides are intended to ease printing, but supports
-may still be needed depending on the printer, material, cooling,
+The sloped ledge undersides are intended to ease printing, but the ledges
+and the narrow overhang at the stacking shoulder may still need supports
+depending on the printer, material, cooling,
 orientation, and slicer settings. Do not assume support-free printing.
 Check that the default 1 mm walls and fine engraved lines are resolved
 well by your nozzle and chosen extrusion widths.
@@ -152,8 +193,12 @@ Sliding fit depends on calibration, shrinkage, first-layer expansion, and
 surface finish. Try a small fit sample before a full print and tune
 `lidClearance` as necessary. The engraving leaves
 `lidThickness - lidArtworkDepth` of material beneath it (1.5 mm by default).
+For lidless stacking, tune `stackingClearance` instead; it is a per-side
+clearance, so increasing it by 0.1 mm reduces base length and width by
+0.2 mm. First-layer expansion can tighten this fit. Check a printed pair
+before making a taller stack, and keep stacks low and stable.
 Choose adequate perimeters, floor layers, and material for your use.
-No load rating is specified for the box or its pull ledges.
+No load rating is specified for the box, its pull ledges, or a stack.
 
 ## Contributions
 

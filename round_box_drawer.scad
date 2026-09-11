@@ -9,6 +9,13 @@ cornerRadius=5;
 wallThickness=1;
 bottomThickness=2;
 
+/* [Stacking] */
+// Lidless boxes only. The inset base locates inside the box below.
+withStacking=true;
+stackingDepth=3;
+// Gap per side between the inset base and the lower box's inner wall.
+stackingClearance=0.25;
+
 /* [Lid] */
 withLid=false;
 lidThickness=2;
@@ -35,6 +42,7 @@ lidArtworkLineGrowth=0.2;
 
 /* [Global] */
 assert(is_bool(withLid),"withLid must be true or false.");
+assert(is_bool(withStacking),"withStacking must be true or false.");
 assert(itemsShown=="both" || itemsShown=="box" || itemsShown=="lid",
 	   "itemsShown must be both, box, or lid.");
 
@@ -92,17 +100,37 @@ module showBox(){
 			  ledgeWidth=pullWidth,
 			  ledgeProjection=pullProjection,
 			  ledgeThickness=pullThickness,
-			  ledgeTopOffset=pullTopOffset);
+			  ledgeTopOffset=pullTopOffset,
+			  stackable=withStacking,
+			  stackDepth=stackingDepth,
+			  stackClearance=stackingClearance);
 }
 
 module round_box(l=40,w=30,h=30,bt=2,wt=2,lt=2,r=5,et=0.5,
 				 lidEnabled=false,ledges="none",ledgeWidth=30,
-				 ledgeProjection=6,ledgeThickness=3,ledgeTopOffset=8){
+				 ledgeProjection=6,ledgeThickness=3,ledgeTopOffset=8,
+				 stackable=false,stackDepth=3,stackClearance=0.25){
+	stackEnabled=stackable && !lidEnabled;
+	baseHeight=stackEnabled ? stackDepth : 0;
+	baseInset=wt+stackClearance;
+	floorHeight=bt+baseHeight;
 	assert(wt>0 && l>2*wt && w>2*wt,
 		   "Box length and width must exceed twice the positive wall thickness.");
 	assert(bt>0 && h>bt,"Box height must exceed the positive bottom thickness.");
 	assert(r>wt && 2*r<=min(l,w),
 		   "Corner radius must exceed wall thickness and fit within the box.");
+	if (stackEnabled){
+		assert(stackDepth>0 && floorHeight<h,
+			   "Stacking depth must be positive and leave room above the raised floor.");
+		assert(h-stackDepth>=floorHeight+0.5,
+			   "The stacked base must remain at least 0.5 mm above the lower box floor.");
+		assert(stackClearance>0,"Stacking clearance must be positive.");
+		assert(l>2*baseInset && w>2*baseInset && r>baseInset,
+			   "The inset stacking base must fit within the box and its corner radius.");
+		if (ledges!="none")
+			assert(ledgeTopOffset>=stackDepth+0.5,
+				   "Pull top offset must clear the stacked base: stackingDepth + 0.5 mm.");
+	}
 	if (lidEnabled){
 		assert(lt>0 && h>bt+lt+wt,
 			   "The positive lid thickness and rails must fit above the box bottom.");
@@ -111,8 +139,16 @@ module round_box(l=40,w=30,h=30,bt=2,wt=2,lt=2,r=5,et=0.5,
 
 	union(){
 		difference(){
-			round_cube(l=l,w=w,h=lidEnabled ? h-lt : h,r=r);
-			translate ([wt, wt, bt])
+			union(){
+				translate([0,0,baseHeight])
+				round_cube(l=l,w=w,h=(lidEnabled ? h-lt : h)-baseHeight,r=r);
+				if (stackEnabled)
+					// Overlap the solid base with the floor above the seating shoulder.
+					translate([baseInset,baseInset,0])
+					round_cube(l=l-2*baseInset,w=w-2*baseInset,
+							   h=baseHeight+min(0.01,bt/2),r=r-baseInset);
+			}
+			translate ([wt, wt, floorHeight])
 			round_cube(l=l-2*wt,w=w-2*wt,h=h,r=r-wt);
 		}
 		if (lidEnabled){
@@ -120,7 +156,7 @@ module round_box(l=40,w=30,h=30,bt=2,wt=2,lt=2,r=5,et=0.5,
 			translate ([0, 0, -wt])
 			roundBoxRim(l=l,w=w,h=h,et=et,r=r,wt=wt,lt=lt);
 		}
-		internalPullLedges(l=l,w=w,h=h,bt=bt,wt=wt,r=r,lt=lt,
+		internalPullLedges(l=l,w=w,h=h,bt=floorHeight,wt=wt,r=r,lt=lt,
 						   lidEnabled=lidEnabled,placement=ledges,
 						   width=ledgeWidth,projection=ledgeProjection,
 						   thickness=ledgeThickness,topOffset=ledgeTopOffset);
