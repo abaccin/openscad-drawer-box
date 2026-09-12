@@ -1,8 +1,9 @@
 # Parametric drawer box
 
-A rounded, parametric OpenSCAD box for drawer organization, with internal
-finger-pull ledges, a locating base for lidless stacking, and an optional
-sliding lid with engraved robot artwork.
+A rounded, parametric OpenSCAD box for drawer organization, with optional
+internal grid divisions, finger-pull ledges, a locating base for lidless
+stacking, and an optional sliding lid with engraved robot artwork and a
+small personal AB logo.
 The model uses millimeters and is compatible with OpenSCAD 2021.01.
 
 The default box is **160 x 95 x 50 mm** (outside length, width, height).
@@ -12,31 +13,40 @@ With `withStacking=true` (the default), the bottom 3 mm steps inward to
 locate inside another lidless box. Its shoulder rests on the lower rim,
 keeping the boxes aligned without changing the outside dimensions.
 `pullLedges="both"` adds a ledge inside each short end wall.
+Divisions are off by default, preserving the open interior. Set
+`dividerCountX` and/or `dividerCountY` above zero to add them.
 
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| `round_box_drawer.scad` | Parametric stackable box, internal pull ledges, optional sliding lid, and artwork engraving. |
+| `round_box_drawer.scad` | Parametric stackable box, grid divisions, pull ledges, optional sliding lid, and engravings. |
 | `robot-relief.svg` | Robot linework imported for the engraved lid. Keep it next to the SCAD file. |
+| `ab-logo-monochrome.svg` | Personal AB logo imported for the small lid engraving. Keep it next to the SCAD file. |
 | `README.md` | Parameters, usage, and printing guidance. |
+| `tests/model.test.mjs` | OpenSCAD rendering, geometry, and parameter regression checks using Node.js. |
 
-No external OpenSCAD libraries are required. The SVG is only needed when
-displaying or rendering a lid with `withLidArtwork=true`; the lidless box
-does not import it. Set `withLidArtwork=false` for an undecorated lid.
+No external OpenSCAD libraries are required. Each SVG is only needed when
+displaying or rendering a lid with its corresponding engraving enabled;
+the lidless box imports neither. Set both `withLidArtwork=false` and
+`withLidLogo=false` for an undecorated lid.
 
 ## OpenSCAD usage
 
 1. Download or clone this repository and open `round_box_drawer.scad` in
-   OpenSCAD 2021.01 or later, leaving `robot-relief.svg` beside it.
-2. Adjust the parameters at the top of the source or in the Customizer.
-   Press **F5** to preview after changes.
+   OpenSCAD 2021.01 or later, leaving both SVGs beside it.
+2. Adjust the commented user settings at the top of the source or in the
+   Customizer. Everything below `[Hidden]` is implementation, not settings.
+   Set divider counts, height, thickness, and optional compartment sizes
+   under **Internal divisions**. Press **F5** to preview after changes.
 3. For the default lidless box, leave `withLid=false` and select
    `itemsShown="box"` or `"both"`. Leave `withStacking=true` for the locating
    base, or set it to `false` to restore the original full-width flat base.
 4. For a sliding-lid box, set `withLid=true`. This restores the lid rails
    and the separate sliding lid. With the default `withLidArtwork=true`,
    the robot is engraved 0.5 mm into the lid's upper face, not raised.
+   `withLidLogo=true` also adds the small AB engraving opposite the thumb
+   notch; the robot automatically fits into the remaining space.
    `itemsShown="both"` lays the box and lid out beside one another.
 5. Export parts separately: select `itemsShown="box"`, press **F6** to
    render, then choose **File > Export > Export as STL**. For a matching
@@ -57,6 +67,8 @@ for parameter assertions or import errors before exporting.
 ## Parameters
 
 All lengths below are in millimeters. Defaults are those in the SCAD file.
+Every user setting has a comment immediately above it explaining what
+to change; geometry calculations remain below the settings.
 
 ### Display and box
 
@@ -69,6 +81,66 @@ All lengths below are in millimeters. Defaults are those in the SCAD file.
 | `cornerRadius` | `5` | Outside corner radius in plan view. |
 | `wallThickness` | `1` | Side-wall thickness. |
 | `bottomThickness` | `2` | Floor thickness above the base shoulder when stacking is enabled; otherwise measured from the build plate. |
+
+### Internal divisions
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `dividerCountX` | `0` | Number of walls across the inside length, making `dividerCountX + 1` columns along X. |
+| `dividerCountY` | `0` | Number of walls across the inside width, making `dividerCountY + 1` rows along Y. |
+| `dividerHeight` | `25` | Wall height above the interior floor, shared by both directions. |
+| `dividerThickness` | `1.2` | Thickness of all divider walls, independent of the outside walls. |
+| `compartmentSizesX` | `[]` | Empty for equal spacing; otherwise one clear length per X divider, starting at X=0. The last compartment uses the remaining length. |
+| `compartmentSizesY` | `[]` | Empty for equal spacing; otherwise one clear width per Y divider, starting at Y=0. The last compartment uses the remaining width. |
+
+Counts describe **walls, not compartments**: `dividerCountX=2` and
+`dividerCountY=1` make a **3 by 2 grid (six compartments)**. Zero disables
+an axis; both zero give the original undivided box. These are permanent
+walls fused into the floor and rounded shell, not removable inserts.
+
+For equal spacing, the clear size on either axis is:
+
+```text
+(outside size - 2*wallThickness - divider count*dividerThickness)
+/ (divider count + 1)
+```
+
+For unequal sizes, provide exactly as many entries as divider walls on
+that axis. Entries specify **clear compartment sizes**, excluding divider
+thickness, measured from the inner face of the wall nearest X=0 or Y=0.
+The final compartment receives the remainder; the box is not resized.
+For example, with the default box dimensions:
+
+```scad
+dividerCountX=2;
+dividerCountY=1;
+dividerHeight=25;
+dividerThickness=1.2;
+compartmentSizesX=[40,55];
+compartmentSizesY=[30];
+```
+
+This makes three columns of **40, 55, and 60.6 mm** and two rows of
+**30 and 61.8 mm**. Set the size lists back to `[]` for equal spacing,
+or update them whenever you change the counts. Edit these variable-length
+lists in the source; OpenSCAD's Customizer has limited support for vectors.
+Rounded corners and pull
+ledges reduce usable space locally; these measurements are between the
+straight wall faces. Dividers intersect as a full grid, not separate
+per-row layouts.
+
+The divider height starts at Z=`bottomThickness + stackingDepth` for
+stackable lidless boxes, otherwise at Z=`bottomThickness`. Its maximum is:
+
+| Configuration | Maximum `dividerHeight` | Default box |
+| --- | --- | --- |
+| Lidless, stacking enabled | `boxHeight - bottomThickness - 2*stackingDepth - internalClearance` | `41.5` |
+| Sliding lid enabled | `boxHeight - bottomThickness - lidThickness - wallThickness - internalClearance` | `44.5` |
+| Lidless, stacking disabled | `boxHeight - bottomThickness` | `48` |
+
+Excessive heights are rejected rather than silently shortened. Dividers
+can meet the pull ledges; choose compartment sizes and heights that leave
+finger access, or set `pullLedges="none"` when the ledges are not needed.
 
 ### Lidless stacking
 
@@ -141,11 +213,37 @@ load-capacity guarantee.
 | `lidArtworkDepth` | `0.5` | Engraving depth below the lid's upper face. |
 | `lidArtworkMargin` | `8` | Artwork margin used when fitting the rotated image to the lid. |
 | `lidArtworkLineGrowth` | `0.2` | Expand each side of the linework to improve fine-feature printability. |
+| `lidArtworkAspect` | `939/453` | Width/height ratio after rotating the SVG 90 degrees. Change this for replacement artwork with different proportions. |
 
-The artwork is centered, rotated along the lid, and scaled with its aspect
-ratio preserved. The sizing calculation is tailored to the supplied
-453 x 939 SVG; replacing it with a differently proportioned image may
-require adjusting `artworkAspect` inside `lidArtwork()`.
+The artwork is centered in its allocated area, rotated along the lid,
+and scaled with its aspect ratio preserved. With the logo enabled, its
+strip is reserved first and the robot is scaled into the remaining area
+without overlap. Disabling the logo restores the original robot layout.
+
+### Personal lid logo
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `withLidLogo` | `true` | Engrave the personal AB logo when a lid is generated; independent of `withLidArtwork`. |
+| `lidLogoFile` | `"ab-logo-monochrome.svg"` | SVG path relative to the SCAD file. |
+| `lidLogoSize` | `12` | Width and height of the square logo in millimeters. Replacement artwork is fitted to this square. |
+| `lidLogoDepth` | `0.5` | Engraving depth below the lid surface, not a raised badge. |
+| `lidLogoMargin` | `4` | Margin around the logo strip, including the distance from the short edge. |
+
+The small logo is centered across the lid near its closed end, opposite
+the thumb notch. The reserved strip is `lidLogoSize + 2*lidLogoMargin`
+long (20 mm by default). The logo works without the robot and is only
+imported when a lid is displayed. The supplied SVG retains its cutout
+letters and transparent background.
+
+### Fit and clearance
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `internalClearance` | `0.5` | Positive minimum gap beneath an inserted stacking base or lid rails, and beneath pull ledges. Also used to keep the logo clear of the lid bevel. |
+
+This is separate from the sliding width fit (`lidClearance`) and stacking
+side fit (`stackingClearance`).
 
 ### Parameter limits
 
@@ -155,24 +253,35 @@ radius exceeds the wall thickness while fitting within the footprint.
 Enabled stacking requires positive depth and clearance, room above the
 raised floor, and a base inset smaller than the corner radius that leaves
 positive base dimensions. The inserted base must clear the lower box's
-raised floor by at least 0.5 mm:
-`boxHeight >= bottomThickness + 2*stackingDepth + 0.5`.
+raised floor by at least `internalClearance` (default 0.5 mm):
+`boxHeight >= bottomThickness + 2*stackingDepth + internalClearance`.
 Pull ledges must be at least
-`stackingDepth + 0.5` below the rim so the upper box's base clears them.
+`stackingDepth + internalClearance` below the rim so the upper box's base clears them.
 With a lid enabled, the lid and rails must fit above the floor, and
 `lidEdgeThickness` must be between zero and `lidThickness`.
 
 Enabled pull ledges require positive width, projection, thickness, and top
 offset. Their width must fit between the rounded end-wall corners. Their
 combined projection must leave internal space, and their undersides must
-remain at least 0.5 mm above the floor. With a lid enabled, `pullTopOffset`
-must be at least `lidThickness + wallThickness + 0.5` to clear the rails.
+remain at least `internalClearance` above the floor. With a lid enabled,
+`pullTopOffset` must be at least
+`lidThickness + wallThickness + internalClearance` to clear the rails.
 For stackable boxes, the underside clearance is measured from the raised
 interior floor.
 
-For an engraved lid, the depth must be positive and less than
-`lidThickness`; margins and line growth must be nonnegative and leave room
-for the artwork. Source assertions catch these constraints, but do not
+Divider counts must be nonnegative integers. Enabled divisions require
+positive height and thickness. Size lists must be empty or contain exactly
+one positive number per divider on that axis; the sizes plus all divider
+thicknesses must leave a positive final compartment. Dividers must fit
+above the floor and below the relevant lid/stacking height limit.
+
+For either lid engraving, the depth must be positive and less than
+`lidThickness`. Robot margins and line growth must be nonnegative, its
+aspect ratio positive, and its allocated area large enough for its margins.
+The logo size must be positive, and its size plus twice its margin must
+be smaller than both lid dimensions. Its margin must be at least
+`lidThickness - lidEdgeThickness + internalClearance` to clear the bevel.
+Source assertions catch these constraints, but do not
 replace checking the rendered geometry, finger access, and printed fit.
 
 ## Printing and fit
@@ -198,7 +307,27 @@ clearance, so increasing it by 0.1 mm reduces base length and width by
 0.2 mm. First-layer expansion can tighten this fit. Check a printed pair
 before making a taller stack, and keep stacks low and stable.
 Choose adequate perimeters, floor layers, and material for your use.
+Dividers grow vertically from the floor; check that their thickness is
+resolved by your extrusion width. The 12 mm logo has fine lines and small
+letter cutouts; enlarge `lidLogoSize` if your nozzle cannot resolve them.
+Its engraving leaves `lidThickness - lidLogoDepth` material beneath it.
 No load rating is specified for the box, its pull ledges, or a stack.
+
+## Regression checks
+
+With Node.js 18 or later and OpenSCAD 2021.01 or later installed, run:
+
+```powershell
+$env:OPENSCAD='C:\Program Files\OpenSCAD\openscad.exe'
+node --test tests\model.test.mjs
+```
+
+On systems where `openscad` is on PATH, `OPENSCAD` can be omitted.
+Checks render STL meshes for grid, height, lid, and logo configurations,
+inspect actual solid geometry, and exercise invalid parameter assertions.
+Temporary render files are removed automatically.
+Detailed robot engraving can take several minutes with OpenSCAD 2021.01;
+each render has a ten-minute timeout.
 
 ## Contributions
 
