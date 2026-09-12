@@ -1,7 +1,7 @@
 // USER SETTINGS: edit this section or use the OpenSCAD Customizer.
 // All dimensions are millimeters. Start with the outside box dimensions.
 // Set divider counts above zero for compartments; leave both at zero for an open box.
-// Enable withLid for a sliding lid; stacking applies only without a lid.
+// Enable withLid and choose lidStyle; stacking applies only without a lid.
 // Preview with F5, check console messages, then render with F6 before exporting.
 
 /* [Display] */
@@ -13,7 +13,7 @@ itemsShown="both"; // [both,box,lid]
 boxLength=160;
 // Outside width along Y; must exceed twice wallThickness.
 boxWidth=95;
-// Overall outside height, including the inset stacking base when enabled.
+// Overall outside height, including the lid when enabled or the inset stacking base.
 boxHeight=50;
 // Outside corner radius; greater than wallThickness, at most half the shorter side.
 cornerRadius=5;
@@ -45,16 +45,36 @@ stackingDepth=3;
 stackingClearance=0.25;
 
 /* [Lid] */
-// Generate sliding-lid rails and a separate lid; disables the stacking base.
+// Generate a matching box and separate lid; disables the stacking base.
 withLid=false;
-// Full lid thickness; must leave room above the floor and dividers for the rails.
+// Sliding preserves the original rails; magnetic lifts off vertically.
+lidStyle="sliding"; // [sliding,magnetic]
+// Sliding lid thickness; must leave room above the floor and dividers for the rails.
 lidThickness=2;
-// Total reduction in lid width (not per side). Increase for a looser sliding fit.
+// Total reduction in sliding lid width (not per side). Increase for a looser fit.
 lidClearance=0.2;
-// Thickness at the beveled lid edges; between 0 and lidThickness.
+// Thickness at the sliding lid's beveled edges; between 0 and lidThickness.
 lidEdgeThickness=0.5;
-// Cut a thumb notch into the opening end of the lid.
+// Sliding: thumb notch. Magnetic: underside finger recess at the X=boxLength edge.
 withNotch=true;
+
+/* [Magnetic lid] */
+// Full plate thickness, excluding the inset lip. Requires room for pockets and engraving.
+magneticLidThickness=5;
+// Round magnet diameter. Four pairs require eight magnets.
+magnetDiameter=3;
+// Round magnet thickness; magnets are glued into accessible pockets after printing.
+magnetThickness=3;
+// Radial gap per side for glue/fit; pocket diameter = magnetDiameter + 2*this.
+magnetPocketClearance=0.1;
+// Recess below each seating face; pocket depth = magnetThickness + this.
+magnetRecess=0.1;
+// Gap per side between the inset lip and the box walls/magnet pads.
+magneticLidClearance=0.3;
+// Lip insertion depth below the seated lid; leave this space above dividers and ledges.
+magneticLidLocatorDepth=2;
+// Thickness of the inset perimeter lip, which follows the opening around the magnet pads.
+magneticLidLipThickness=1.2;
 
 /* [Internal pull ledges] */
 // Short end walls: start is X=0, end is X=boxLength. Remove the lid before lifting.
@@ -73,7 +93,7 @@ pullTopOffset=8;
 withLidArtwork=true;
 // SVG path relative to this SCAD file. Keep the supplied SVG beside the model.
 lidArtworkFile="robot-relief.svg";
-// Engraving depth; greater than 0 and less than lidThickness.
+// Engraving depth; magnetic lids must also retain 1 mm of skin above the magnet pockets.
 lidArtworkDepth=0.5;
 // Empty margin around the artwork's allocated area, separate from the logo strip.
 lidArtworkMargin=8;
@@ -89,13 +109,29 @@ withLidLogo=true;
 lidLogoFile="ab-logo-monochrome.svg";
 // Width and height of the supplied square logo. Fine details may need a larger size.
 lidLogoSize=12;
-// Logo engraving depth; greater than 0 and less than lidThickness.
+// Logo depth; magnetic lids must also retain 1 mm of skin above the magnet pockets.
 lidLogoDepth=0.5;
-// Space around the logo strip; must clear the lid bevel by at least internalClearance.
+// Space around the logo strip; must clear the sliding bevel or magnetic edge by internalClearance.
 lidLogoMargin=4;
 
+/* [Custom lid text] */
+// Engrave a single-line label in its own band, with or without artwork and logo.
+withLidText=false;
+// Your label. When enabled, this must contain visible characters and no line breaks.
+lidText="My box";
+// Installed font family and optional style; copy a name from Help > Font List.
+lidTextFont="Liberation Sans:style=Bold";
+// OpenSCAD text size in mm. Long labels need a smaller size; text is not auto-fitted.
+lidTextSize=8;
+// Engraving depth. Magnetic lids must retain 1 mm of skin above the magnet pockets.
+lidTextDepth=0.5;
+// Height of the reserved label band along Y; the robot is fitted into the remaining area.
+lidTextBandHeight=20;
+// Empty margin around the label band, including clearance from the sliding bevel.
+lidTextMargin=4;
+
 /* [Fit and clearance] */
-// Minimum vertical gap under stacked bases/lid rails and below pull ledges; must be positive.
+// Minimum vertical gap under bases/rails/magnetic lip and below ledges; must be positive.
 internalClearance=0.5;
 
 /* [Hidden] */
@@ -103,20 +139,35 @@ internalClearance=0.5;
 assert(is_bool(withLid),"withLid must be true or false.");
 assert(is_bool(withStacking),"withStacking must be true or false.");
 assert(is_bool(withLidLogo),"withLidLogo must be true or false.");
+assert(is_bool(withLidText),"withLidText must be true or false.");
 assert(is_num(internalClearance) && internalClearance>0,
 	   "internalClearance must be positive.");
 assert(itemsShown=="both" || itemsShown=="box" || itemsShown=="lid",
 	   "itemsShown must be both, box, or lid.");
+assert(lidStyle=="sliding" || lidStyle=="magnetic",
+	   "lidStyle must be sliding or magnetic.");
 
-if (itemsShown=="box" || itemsShown=="both") showBox();
-if (withLid && (itemsShown=="lid" || itemsShown=="both")) showLid();
+if (withLid && lidStyle=="magnetic")
+	magneticChecks() {
+		if (itemsShown=="box" || itemsShown=="both") showBox();
+		if (itemsShown=="lid" || itemsShown=="both") showLid();
+	}
+else {
+	if (itemsShown=="box" || itemsShown=="both") showBox();
+	if (withLid && (itemsShown=="lid" || itemsShown=="both")) showLid();
+}
 if (!withLid && itemsShown=="lid")
 	echo("Lid disabled: set withLid=true, or select itemsShown=box or both.");
 
 module showLid(){
+	if (lidStyle=="magnetic")
+		translate([0,-boxWidth-2*wallThickness,0]) magneticLid();
+	else slidingLid();
+}
+
+module slidingLid(){
 	l=boxLength-wallThickness;
 	w=boxWidth-2*wallThickness-lidClearance;
-	logoStrip=withLidLogo ? lidLogoSize+2*lidLogoMargin : 0;
 	translate ([0, -2*wallThickness, 0])
 	difference(){
 		roundBoxLid(l=l,
@@ -125,10 +176,53 @@ module showLid(){
 					et=lidEdgeThickness,
 					r=cornerRadius-wallThickness,
 					notch=withNotch);
+		lidDecorations(l=l,w=w,h=lidThickness,et=lidEdgeThickness);
+	}
+}
+
+module lidTextChecks(l,w,h,et){
+	if (withLidText){
+		assert(is_string(lidText) && len(lidText)>0,
+			   "lidText must be a nonempty string when withLidText=true.");
+		assert(len([for (i=[0:len(lidText)-1]) if (lidText[i]!=" ") i])>0,
+			   "lidText must contain visible characters.");
+		assert(len([for (i=[0:len(lidText)-1])
+					if (lidText[i]=="\n" || lidText[i]=="\r" || lidText[i]=="\t") i])==0,
+			   "lidText must be a single line without tabs or line breaks.");
+		assert(is_string(lidTextFont) && len(lidTextFont)>0,
+			   "lidTextFont must name an installed font from Help > Font List.");
+		assert(is_num(lidTextSize) && lidTextSize>0,"lidTextSize must be positive.");
+		assert(is_num(lidTextDepth) && lidTextDepth>0 && lidTextDepth<h,
+			   "lidTextDepth must be positive and less than the active lid thickness.");
+		assert(is_num(lidTextBandHeight) && lidTextBandHeight>0 && lidTextBandHeight<w,
+			   "lidTextBandHeight must be positive and smaller than the lid width.");
+		assert(is_num(lidTextMargin) && lidTextMargin>=h-et+internalClearance,
+			   "lidTextMargin must clear the lid edge/bevel by internalClearance.");
+		assert(lidTextBandHeight>=1.5*lidTextSize+2*lidTextMargin,
+			   "lidTextBandHeight must be at least 1.5*lidTextSize + 2*lidTextMargin for font ascenders/descenders.");
+		assert(l>(withLidLogo ? lidLogoSize+2*lidLogoMargin : 0)+2*lidTextMargin,
+			   "The lid must leave space for text beside the logo strip.");
+	}
+	children();
+}
+
+module lidDecorations(l,w,h,et,beveled=true){
+	lidTextChecks(l,w,h,et)
+	let(logoStrip=withLidLogo ? lidLogoSize+2*lidLogoMargin : 0,
+		textStrip=withLidText ? lidTextBandHeight : 0){
 		if (withLidArtwork)
 			translate([logoStrip,0,0])
-			lidArtwork(l=l-logoStrip,w=w,h=lidThickness);
-		if (withLidLogo) lidLogo(l=l,w=w,h=lidThickness,et=lidEdgeThickness);
+			lidArtwork(l=l-logoStrip,w=w-textStrip,h=h);
+		if (withLidLogo) lidLogo(l=l,w=w,h=h,et=et,beveled=beveled);
+		if (withLidText){
+			echo(str("Text uses font '",lidTextFont,"' at size ",lidTextSize,
+					 ". Preview the full label within ",l-logoStrip-2*lidTextMargin,
+					 " x ",textStrip-2*lidTextMargin,
+					 " mm; long labels need a smaller size. Missing fonts may be substituted by OpenSCAD."));
+			translate([logoStrip+(l-logoStrip)/2,-w+textStrip/2,h-lidTextDepth])
+			linear_extrude(height=lidTextDepth+0.01,convexity=10)
+			text(lidText,size=lidTextSize,font=lidTextFont,halign="center",valign="center");
+		}
 	}
 }
 
@@ -151,12 +245,13 @@ module lidArtwork(l,w,h){
 	import(file=lidArtworkFile,center=true);
 }
 
-module lidLogo(l,w,h,et){
+module lidLogo(l,w,h,et,beveled=true){
 	assert(lidLogoSize>0,"Lid logo size must be positive.");
 	assert(lidLogoDepth>0 && lidLogoDepth<h,
 		   "Lid logo depth must be positive and less than the lid thickness.");
 	assert(lidLogoMargin>=h-et+internalClearance,
-		   "Lid logo margin must clear the bevel: lidThickness - lidEdgeThickness + internalClearance.");
+		   beveled ? "Lid logo margin must clear the bevel: lidThickness - lidEdgeThickness + internalClearance." :
+		   "Lid logo margin must clear the magnetic edge by internalClearance.");
 	assert(lidLogoSize+2*lidLogoMargin<min(l,w),
 		   "The lid is too small for the logo and its margins.");
 
@@ -167,21 +262,27 @@ module lidLogo(l,w,h,et){
 }
 
 module showBox(){
+	if (withLid && lidStyle=="magnetic") magneticBox();
+	else configuredBox();
+}
+
+module configuredBox(height=boxHeight,ledgeOffset=pullTopOffset,
+					 lidEnabled=withLid,stackable=withStacking,facets=30){
 	round_box(l=boxLength,
 			  w=boxWidth,
-			  h=boxHeight,
+			  h=height,
 			  bt=bottomThickness,
 			  wt=wallThickness,
 			  lt=lidThickness,
 			  r=cornerRadius,
 			  et=lidEdgeThickness,
-			  lidEnabled=withLid,
+			  lidEnabled=lidEnabled,
 			  ledges=pullLedges,
 			  ledgeWidth=pullWidth,
 			  ledgeProjection=pullProjection,
 			  ledgeThickness=pullThickness,
-			  ledgeTopOffset=pullTopOffset,
-			  stackable=withStacking,
+			  ledgeTopOffset=ledgeOffset,
+			  stackable=stackable,
 			  stackDepth=stackingDepth,
 			  stackClearance=stackingClearance,
 			  divisionsX=dividerCountX,
@@ -190,7 +291,156 @@ module showBox(){
 			  divisionThickness=dividerThickness,
 			  sizesX=compartmentSizesX,
 			  sizesY=compartmentSizesY,
-			  clearance=internalClearance);
+			  clearance=internalClearance,
+			  facets=facets);
+}
+
+function magnetPocketRadius()=magnetDiameter/2+magnetPocketClearance;
+function magnetPocketDepth()=magnetThickness+magnetRecess;
+function magnetPadRadius()=magnetPocketRadius()+1.2;
+function magnetCenters(l,w,wt,r,padRadius)=
+	[for (x=[r+padRadius,l-r-padRadius], y=[wt+padRadius,w-wt-padRadius]) [x,y]];
+
+module magneticPads(top){
+	padRadius=magnetPadRadius();
+	for (p=magnetCenters(boxLength,boxWidth,wallThickness,cornerRadius,padRadius)){
+		nearSide=p[1]<boxWidth/2;
+		translate([p[0],nearSide ? wallThickness : boxWidth-wallThickness,top])
+		rotate([0,0,nearSide ? 90 : -90])
+		pullLedge(width=2*padRadius,projection=2*padRadius,
+				  thickness=magnetPocketDepth()+1,overlap=min(0.05,wallThickness/4));
+	}
+}
+
+module magneticFingerRecess(height){
+	translate([boxLength-3,boxWidth/2-5,0])
+	round_cube(l=6,w=10,h=height,r=2);
+}
+
+module magneticOpeningProfile(){
+	difference(){
+		translate([wallThickness,wallThickness])
+		projection()
+		round_cube(l=boxLength-2*wallThickness,w=boxWidth-2*wallThickness,
+				   h=1,r=cornerRadius-wallThickness,$fn=64);
+		projection() magneticPads(top=0);
+		if (withNotch) projection() magneticFingerRecess(height=1);
+	}
+}
+
+module magneticLipProfile(){
+	difference(){
+		offset(delta=-magneticLidClearance) magneticOpeningProfile();
+		offset(delta=-magneticLidClearance-magneticLidLipThickness) magneticOpeningProfile();
+	}
+}
+
+module magneticChecks(){
+	assert(is_num(magneticLidThickness) && magneticLidThickness>0,
+		   "magneticLidThickness must be positive.");
+	assert(is_num(magnetDiameter) && magnetDiameter>0,
+		   "magnetDiameter must be positive.");
+	assert(is_num(magnetThickness) && magnetThickness>0,
+		   "magnetThickness must be positive.");
+	assert(is_num(magnetPocketClearance) && magnetPocketClearance>=0,
+		   "magnetPocketClearance must be nonnegative (per side).");
+	assert(is_num(magnetRecess) && magnetRecess>=0,
+		   "magnetRecess must be nonnegative.");
+	assert(is_num(magneticLidClearance) && magneticLidClearance>0,
+		   "magneticLidClearance must be positive (per side).");
+	assert(is_num(magneticLidLocatorDepth) && magneticLidLocatorDepth>0,
+		   "magneticLidLocatorDepth must be positive.");
+	assert(is_num(magneticLidLipThickness) && magneticLidLipThickness>0,
+		   "magneticLidLipThickness must be positive.");
+	assert(is_bool(withNotch),"withNotch must be true or false.");
+	assert(is_num(wallThickness) && wallThickness>0 &&
+		   is_num(boxLength) && boxLength>2*wallThickness &&
+		   is_num(boxWidth) && boxWidth>2*wallThickness,
+		   "Box length and width must exceed twice the positive wall thickness.");
+	assert(is_num(cornerRadius) && cornerRadius>wallThickness &&
+		   2*cornerRadius<=min(boxLength,boxWidth),
+		   "Corner radius must exceed wall thickness and fit within the box.");
+	assert(is_num(boxHeight) && is_num(bottomThickness) && bottomThickness>0,
+		   "Box height must be numeric and bottomThickness must be positive.");
+
+	let(padRadius=magnetPadRadius(),
+		seat=boxHeight-magneticLidThickness,
+		overlap=min(0.05,wallThickness/4),
+		gap=max(internalClearance,magneticLidClearance)){
+		assert(magneticLidThickness>=magnetPocketDepth()+1,
+			   "magneticLidThickness must leave at least 1 mm of skin above the magnet pockets.");
+		assert(cornerRadius+2*padRadius+gap+magneticLidLipThickness<=boxLength/2 &&
+			   max(cornerRadius,wallThickness+2*padRadius)+gap+
+			   max(magneticLidLipThickness,withNotch ? 5 : 0)<=boxWidth/2,
+			   "Magnetic pads and inset lip must fit between the rounded corners; increase box length/width or reduce magnet size/corner radius/lip thickness.");
+		assert(min(boxLength,boxWidth)>2*(wallThickness+magneticLidClearance+magneticLidLipThickness)+internalClearance,
+			   "magneticLidClearance leaves no space inside the inset lip.");
+		assert(seat-magnetPocketDepth()-1-2*padRadius-overlap>=bottomThickness+internalClearance,
+			   "Magnetic pad undersides must clear the floor; increase boxHeight or reduce magnet size/thickness.");
+		assert(seat-magneticLidLocatorDepth>=bottomThickness+internalClearance,
+			   "Magnetic inset lip must clear the floor; increase boxHeight or reduce magneticLidLocatorDepth.");
+		if (pullLedges!="none")
+			assert(is_num(pullTopOffset) &&
+				   pullTopOffset>=magneticLidThickness+magneticLidLocatorDepth+internalClearance,
+				   "pullTopOffset must clear the magnetic lip: magneticLidThickness + magneticLidLocatorDepth + internalClearance.");
+		if (dividerCountX>0 || dividerCountY>0)
+			assert(is_num(dividerHeight) &&
+				   dividerHeight<=seat-bottomThickness-magneticLidLocatorDepth-internalClearance,
+				   str("dividerHeight must not exceed ",
+					   seat-bottomThickness-magneticLidLocatorDepth-internalClearance,
+					   " mm above the interior floor; leave clearance for the magnetic inset lip."));
+		children();
+	}
+}
+
+module magnetPockets(top){
+	for (p=magnetCenters(boxLength,boxWidth,wallThickness,cornerRadius,magnetPadRadius()))
+		translate([p[0],p[1],top-magnetPocketDepth()])
+		cylinder(r=magnetPocketRadius(),h=magnetPocketDepth()+0.01,$fn=64);
+}
+
+module magneticBox(){
+	seat=boxHeight-magneticLidThickness;
+	difference(){
+		union(){
+			configuredBox(height=seat,ledgeOffset=pullTopOffset-magneticLidThickness,
+						  lidEnabled=false,stackable=false,facets=64);
+			magneticPads(top=seat);
+		}
+		// Subtract last so dividers or pull ledges cannot fill the blind pockets.
+		magnetPockets(seat);
+	}
+}
+
+module magneticLid(){
+	assert(!withLidArtwork || (is_num(lidArtworkDepth) && lidArtworkDepth>0),
+		   "Lid artwork depth must be positive and numeric.");
+	assert(!withLidLogo || (is_num(lidLogoDepth) && lidLogoDepth>0),
+		   "Lid logo depth must be positive and numeric.");
+	lidTextChecks(boxLength,boxWidth,magneticLidThickness,magneticLidThickness)
+	let(t=magneticLidThickness,
+		engraving=max(withLidArtwork ? lidArtworkDepth : 0,withLidLogo ? lidLogoDepth : 0,
+					  withLidText ? lidTextDepth : 0)){
+		assert(t>=magnetPocketDepth()+engraving+1,
+			   "Magnetic lid engraving must leave at least 1 mm of skin above the magnet pockets; increase magneticLidThickness or reduce engraving depth.");
+		assert(!withNotch || t>=1.5+engraving+1,
+			   "Magnetic finger recess must leave at least 1 mm of skin below the engraving.");
+		difference(){
+			union(){
+				round_cube(l=boxLength,w=boxWidth,h=t,r=cornerRadius,$fn=64);
+				translate([0,0,t-0.01])
+				linear_extrude(height=magneticLidLocatorDepth+0.01,convexity=10)
+				magneticLipProfile();
+			}
+			magnetPockets(t);
+			if (withNotch)
+				translate([0,0,t-1.5]) magneticFingerRecess(height=1.51);
+			// Print exterior-face-down: pockets/lip face up and engraving cuts into Z=0.
+			translate([0,0,t])
+			rotate([180,0,0])
+			lidDecorations(l=boxLength,w=boxWidth,h=t,et=t,beveled=false);
+		}
+	}
 }
 
 module round_box(l=40,w=30,h=30,bt=2,wt=2,lt=2,r=5,et=0.5,
@@ -198,7 +448,7 @@ module round_box(l=40,w=30,h=30,bt=2,wt=2,lt=2,r=5,et=0.5,
 				 ledgeProjection=6,ledgeThickness=3,ledgeTopOffset=8,
 				 stackable=false,stackDepth=3,stackClearance=0.25,
 				 divisionsX=0,divisionsY=0,divisionHeight=25,divisionThickness=1.2,
-				 sizesX=[],sizesY=[],clearance=0.5){
+				 sizesX=[],sizesY=[],clearance=0.5,facets=30){
 	stackEnabled=stackable && !lidEnabled;
 	baseHeight=stackEnabled ? stackDepth : 0;
 	baseInset=wt+stackClearance;
@@ -230,15 +480,15 @@ module round_box(l=40,w=30,h=30,bt=2,wt=2,lt=2,r=5,et=0.5,
 		difference(){
 			union(){
 				translate([0,0,baseHeight])
-				round_cube(l=l,w=w,h=(lidEnabled ? h-lt : h)-baseHeight,r=r);
+				round_cube(l=l,w=w,h=(lidEnabled ? h-lt : h)-baseHeight,r=r,$fn=facets);
 				if (stackEnabled)
 					// Overlap the solid base with the floor above the seating shoulder.
 					translate([baseInset,baseInset,0])
 					round_cube(l=l-2*baseInset,w=w-2*baseInset,
-							   h=baseHeight+min(0.01,bt/2),r=r-baseInset);
+							   h=baseHeight+min(0.01,bt/2),r=r-baseInset,$fn=facets);
 			}
 			translate ([wt, wt, floorHeight])
-			round_cube(l=l-2*wt,w=w-2*wt,h=h,r=r-wt);
+			round_cube(l=l-2*wt,w=w-2*wt,h=h,r=r-wt,$fn=facets);
 		}
 		if (lidEnabled){
 			roundBoxRim(l=l,w=w,h=h,et=et,r=r,wt=wt,lt=lt);
@@ -255,7 +505,7 @@ module round_box(l=40,w=30,h=30,bt=2,wt=2,lt=2,r=5,et=0.5,
 								   (stackEnabled ? h-stackDepth-clearance : h),
 						  countX=divisionsX,countY=divisionsY,
 						  height=divisionHeight,thickness=divisionThickness,
-						  sizesX=sizesX,sizesY=sizesY);
+						  sizesX=sizesX,sizesY=sizesY,facets=facets);
 	}
 }
 
@@ -282,7 +532,7 @@ function dividerPositions(span,count,thickness,sizes,axis)=
 		(len(sizes)==0 ? (i+1)*clearSpace/(count+1) : sizeSum(sizes,i+1))+i*thickness];
 
 module internalDivisions(l,w,bt,wt,r,floorHeight,topLimit,
-						 countX,countY,height,thickness,sizesX,sizesY){
+						 countX,countY,height,thickness,sizesX,sizesY,facets=30){
 	xPositions=dividerPositions(l-2*wt,countX,thickness,sizesX,"X");
 	yPositions=dividerPositions(w-2*wt,countY,thickness,sizesY,"Y");
 	if (len(xPositions)+len(yPositions)>0){
@@ -295,7 +545,7 @@ module internalDivisions(l,w,bt,wt,r,floorHeight,topLimit,
 		translate([0,0,floorHeight-overlap])
 		intersection(){
 			// Clip spanning walls to the rounded outline and fuse them into the floor/shell.
-			round_cube(l=l,w=w,h=height+overlap,r=r);
+			round_cube(l=l,w=w,h=height+overlap,r=r,$fn=facets);
 			union(){
 				for (x=xPositions)
 					translate([wt+x,0,0])
