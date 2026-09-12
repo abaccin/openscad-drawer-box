@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, test } from 'node:test';
 
@@ -15,16 +15,22 @@ const temporary = mkdtempSync(join(tmpdir(), 'drawer-box-test-'));
 let sequence = 0;
 after(() => rmSync(temporary, { recursive: true, force: true }));
 
-function run(settings, extension = 'stl') {
+function run(settings, extension = 'stl', body) {
   const output = join(temporary, `${sequence++}.${extension}`);
   const args = ['-o', output];
   if (extension === 'stl') args.push('--export-format', 'asciistl');
   for (const [name, value] of Object.entries(settings)) {
     args.push('-D', `${name}=${JSON.stringify(value)}`);
   }
-  args.push(join(root, 'round_box_drawer.scad'));
+  let source = join(root, 'round_box_drawer.scad');
+  if (body) {
+    source = join(temporary, `${sequence}-fixture.scad`);
+    writeFileSync(source, `include <round_box_drawer.scad>\n${body}\n`);
+  }
+  args.push(source);
   const result = spawnSync(executable, args, {
     cwd: root, encoding: 'utf8', timeout: 600_000, maxBuffer: 10 * 1024 * 1024,
+    env: { ...process.env, OPENSCADPATH: [root, process.env.OPENSCADPATH].filter(Boolean).join(delimiter) },
   });
   assert.ifError(result.error);
   return { ...result, output, log: result.stdout + result.stderr };
@@ -38,8 +44,8 @@ const cross = (a, b) => [
   a[0] * b[1] - a[1] * b[0],
 ];
 
-function render(settings = {}) {
-  const result = run({ itemsShown: 'box', ...settings });
+function render(settings = {}, expectedShells = 1, body) {
+  const result = run({ itemsShown: 'box', ...settings }, 'stl', body);
   assert.equal(result.status, 0, result.log);
   assert.doesNotMatch(result.log, /ERROR:|WARNING:|not a valid 2-manifold/i);
   const vertices = [...readFileSync(result.output, 'utf8').matchAll(
@@ -63,14 +69,19 @@ function render(settings = {}) {
   }
   assert.ok([...edges.values()].every(count => count === 2), 'Mesh must be watertight');
   const visited = new Set();
-  const pending = [neighbors.keys().next().value];
-  while (pending.length) {
-    const key = pending.pop();
-    if (visited.has(key)) continue;
-    visited.add(key);
-    pending.push(...neighbors.get(key));
+  let shells = 0;
+  for (const start of neighbors.keys()) {
+    if (visited.has(start)) continue;
+    shells++;
+    const pending = [start];
+    while (pending.length) {
+      const key = pending.pop();
+      if (visited.has(key)) continue;
+      visited.add(key);
+      pending.push(...neighbors.get(key));
+    }
   }
-  assert.equal(visited.size, neighbors.size, 'Dividers/engravings must form one connected shell');
+  assert.equal(shells, expectedShells, 'Each exported part must form one connected shell');
 
   return {
     triangles,
@@ -243,5 +254,351 @@ test('invalid parameters fail with actionable assertions rather than broken geom
     const result = run({ itemsShown: 'box', ...settings }, 'csg');
     assert.match(result.log, /ERROR: Assertion/, JSON.stringify(settings));
     assert.match(result.log, expected, JSON.stringify(settings));
+  }
+});
+
+const magneticSettings = { withLid: true, lidStyle: 'magnetic',
+  withLidArtwork: false, withLidLogo: false };
+
+function magneticDimensions(settings) {
+  const l = settings.boxLength ?? 160, w = settings.boxWidth ?? 95, h = settings.boxHeight ?? 50;
+  const wt = settings.wallThickness ?? 1, r = settings.cornerRadius ?? 5;
+  const t = settings.magneticLidThickness ?? 5;
+  const radius = (settings.magnetDiameter ?? 3) / 2 + (settings.magnetPocketClearance ?? 0.1);
+  const depth = (settings.magnetThickness ?? 3) + (settings.magnetRecess ?? 0.1);
+  const pad = radius + 1.2, seat = h - t;
+  const gap = settings.magneticLidClearance ?? 0.3, insertion = settings.magneticLidLocatorDepth ?? 2;
+  const lip = settings.magneticLidLipThickness ?? 1.2;
+  const centers = [r + pad, l - r - pad].flatMap(x => [wt + pad, w - wt - pad].map(y => [x, y]));
+  const corner = r - (r - wt - gap - lip / 2) / Math.sqrt(2);
+  const lipPoints = [
+    [l / 2, wt + gap + lip / 2], [l / 2, w - wt - gap - lip / 2],
+    [(r + 2 * pad + gap + l / 2) / 2, wt + gap + lip / 2],
+    [wt + gap + lip / 2, w / 2],
+    [l - Math.max(wt, settings.withNotch === false ? 0 : 3) - gap - lip / 2, w / 2],
+    [corner, corner], [r + pad, wt + 2 * pad + gap + lip / 2],
+  ];
+  return { l, w, h, wt, r, t, radius, depth, pad, seat, gap, insertion, lip, centers, lipPoints,
+    printPoint: ([x, y, z]) => [x, y - w - 2 * wt, z],
+    seatedPoint: ([x, y, z]) => [x, w - y, h - z] };
+}
+
+for (const [name, settings] of [
+  ['default', {}],
+  ['large', { boxLength: 300, boxWidth: 200, boxHeight: 70, cornerRadius: 12 }],
+  ['compact limit', { boxLength: 24.6, boxWidth: 24.2, pullLedges: 'none' }],
+  ['custom fit', { boxLength: 180, boxWidth: 110, wallThickness: 1.6, cornerRadius: 8,
+    magnetDiameter: 6, magnetThickness: 2, magnetPocketClearance: 0.2, magnetRecess: 0.2,
+    magneticLidThickness: 4, magneticLidClearance: 0.6, magneticLidLocatorDepth: 3,
+    magneticLidLipThickness: 1.8, withNotch: false }],
+]) {
+  test(`magnetic ${name} pair has exact pockets, supports, inset lip, and closed dimensions`, () => {
+    const config = { ...magneticSettings, ...settings };
+    const box = render(config), lid = render({ ...config, itemsShown: 'lid' });
+    const d = magneticDimensions(config);
+    box.bounds[0].forEach(v => near(v, 0));
+    box.bounds[1].forEach((v, i) => near(v, [d.l, d.w, d.seat][i]));
+    lid.bounds[0].forEach((v, i) => near(v, [0, -d.w - 2 * d.wt, 0][i]));
+    lid.bounds[1].forEach((v, i) => near(v, [d.l, -2 * d.wt, d.t + d.insertion][i]));
+    near(d.seat + d.t, d.h);
+    assert.equal(box.contains([d.wt / 2, d.w / 2, 1]), true, 'No inset stacking base');
+    assert.equal(box.contains([d.l / 2, d.wt + 0.1, d.seat - 0.1]), false, 'No sliding rail');
+    for (const [x, y] of d.centers) {
+      for (const [mesh, top, point] of [[box, d.seat, p => p], [lid, d.t, d.printPoint]]) {
+        assert.equal(mesh.contains(point([x, y, top - 0.1])), false, 'Pocket opens at seating face');
+        assert.equal(mesh.contains(point([x, y, top - d.depth + 0.05])), false, 'Pocket reaches exact depth');
+        assert.equal(mesh.contains(point([x, y, top - d.depth - 0.05])), true, 'Blind pocket has a floor');
+        assert.equal(mesh.contains(point([x, y, top - d.depth - 0.95])), true, 'At least 1 mm skin/floor');
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          assert.equal(mesh.contains(point([x + dx * (d.radius - 0.03),
+            y + dy * (d.radius - 0.03), top - 0.5])), false, 'Full pocket diameter is clear');
+          assert.equal(mesh.contains(point([x + dx * (d.radius + 0.03),
+            y + dy * (d.radius + 0.03), top - 0.5])), true, 'Pocket diameter is not oversized');
+          assert.equal(mesh.contains(point([x + dx * (d.pad - 0.05),
+            y + dy * (d.pad - 0.05), top - 0.5])), true, 'Pocket retains 1.2 mm side wall');
+        }
+      }
+      const assembled = d.seatedPoint([x, y, d.t]);
+      assert.ok(d.centers.some(p => Math.abs(p[0] - assembled[0]) < 1e-8 &&
+        Math.abs(p[1] - assembled[1]) < 1e-8), 'Flipped lid pockets align with box pockets');
+      near(assembled[2], d.seat);
+    }
+    for (const [x, y] of d.lipPoints) {
+      const center = [x, y, d.t + d.insertion - 0.05];
+      assert.equal(lid.contains(d.printPoint(center)), true);
+      assert.equal(lid.contains(d.printPoint([center[0], center[1], d.t + d.insertion + 0.05])), false);
+      for (const lift of [0, d.insertion / 2, d.insertion]) {
+        const seated = d.seatedPoint(center);
+        seated[2] += lift;
+        assert.equal(box.contains(seated), false, 'Perimeter lip clears box during vertical insertion');
+      }
+    }
+    // Probe both lip boundaries and the gap to the wall.
+    for (const offset of [d.gap / 2, d.gap - 0.03, d.gap + 0.03, d.gap + d.lip - 0.03, d.gap + d.lip + 0.03]) {
+      assert.equal(lid.contains(d.printPoint([d.l / 2, d.wt + offset, d.t + 0.5])),
+        offset > d.gap && offset < d.gap + d.lip);
+      assert.equal(box.contains([d.l / 2, d.wt + offset, d.seat - 0.5]), false);
+    }
+    assert.equal(lid.contains(d.printPoint([d.l - 0.5, d.w / 2, d.t - 0.1])), config.withNotch === false);
+    assert.equal(lid.contains(d.printPoint([d.l - 0.5, d.w / 2, d.t - 1.6])), true);
+    const lip = render(config, 1, '!linear_extrude(height=1) magneticLipProfile();');
+    assert.equal(lip.contains([d.l / 2, d.w / 2, 0.5]), false, 'Lip is a connected perimeter ring, not a solid plug');
+    for (const [x, y] of d.centers) {
+      assert.equal(lip.contains([x, y, 0.5]), false, 'Lip leaves magnets accessible');
+    }
+  });
+}
+
+for (const [name, settings] of [
+  ['default', { dividerCountX: 2, dividerCountY: 2, compartmentSizesX: [6.8, 140],
+    compartmentSizesY: [2.8, 82], dividerHeight: 40.5, pullTopOffset: 7.5 }],
+  ['large', { boxLength: 300, boxWidth: 200, boxHeight: 70, cornerRadius: 12,
+    dividerCountX: 1, dividerCountY: 1, dividerHeight: 60.5, pullTopOffset: 7.5 }],
+  ['compact limit', { boxLength: 24.6, boxWidth: 24.2, pullLedges: 'none',
+    dividerCountX: 1, dividerCountY: 1, dividerHeight: 40.5 }],
+]) {
+  test(`magnetic ${name} seated lid and insertion sweep have no solid intersection with the box`, () => {
+    const result = run({ ...magneticSettings, ...settings }, 'stl', `
+    !intersection() {
+      magneticBox();
+      // The constant lip cross-section sweeps exactly this volume below the rim.
+      union() {
+        translate([0,boxWidth,boxHeight]) rotate([180,0,0]) magneticLid();
+        translate([0,boxWidth,boxHeight-magneticLidThickness])
+          rotate([180,0,0]) linear_extrude(height=magneticLidLocatorDepth)
+            magneticLipProfile();
+      }
+      // Exclude the intended zero-volume seating face within 0.001 mm.
+      translate([-1,-1,-1])
+        cube([boxLength+2,boxWidth+2,boxHeight-magneticLidThickness+1-0.001]);
+    }
+    `);
+    assert.doesNotMatch(result.log, /ERROR:|WARNING:/i);
+    assert.match(result.log, /Current top level object is empty/, result.log);
+  });
+}
+
+test('magnetic dividers obey the exact height limit and cannot refill magnet pockets', () => {
+  const config = { ...magneticSettings, dividerCountX: 1, dividerCountY: 1, dividerHeight: 40.5,
+    compartmentSizesX: [6.2], compartmentSizesY: [2.2] };
+  const mesh = render(config), d = magneticDimensions(config);
+  assert.equal(mesh.contains([7.8, 20, 42.4]), true);
+  assert.equal(mesh.contains([7.8, 20, 42.6]), false);
+  assert.equal(mesh.contains([20, 3.8, 42.4]), true);
+  assert.equal(mesh.contains([20, 3.8, 42.6]), false);
+  assert.equal(mesh.contains([7.8, 3.8, d.seat - d.depth + 0.1]), false, 'Dividers cannot refill pocket');
+  assert.equal(mesh.contains([7.8, 3.8, d.seat - d.depth - 0.1]), true);
+});
+
+test('magnetic engravings combine real artwork, logo, and text on the exterior and retain pocket skin', () => {
+  const mesh = render({ ...magneticSettings, itemsShown: 'lid', withLidArtwork: true, withLidLogo: true,
+    withLidText: true, lidText: 'Tools' });
+  const engraved = mesh.triangles.filter(t => t.every(v => Math.abs(v[2] - 0.5) < 1e-5));
+  assert.ok(engraved.some(t => t.every(v => v[0] < 20)), 'Personal logo is engraved into exterior Z=0');
+  assert.ok(engraved.some(t => t.every(v => v[0] > 20 && v[1] < -22)), 'Robot stays outside the text band');
+  assert.ok(engraved.some(t => t.every(v => v[0] > 20 && v[1] > -22)), 'Text occupies its own exterior band');
+  const d = magneticDimensions({});
+  const logoPoint = (x, y, z) => d.printPoint([10 + (x - 50) * 12 / 89,
+    47.5 - (50 - y) * 12 / 89, z]);
+  assert.equal(mesh.contains(logoPoint(16, 40, 0.25)), false);
+  assert.equal(mesh.contains(logoPoint(16, 40, 0.75)), true);
+  assert.equal(mesh.contains(logoPoint(30, 30, 0.25)), true);
+});
+
+test('magnetic logo uses flat-edge margins and works without robot artwork', () => {
+  const mesh = render({ ...magneticSettings, itemsShown: 'lid', withLidLogo: true,
+    lidLogoMargin: 0.5, lidLogoDepth: 0.9, lidArtworkFile: 'missing-robot.svg' });
+  assert.ok(mesh.triangles.some(t => t.every(v => Math.abs(v[2] - 0.9) < 1e-5)));
+});
+
+test('magnetic print layout separates the two parts', () => {
+  const mesh = render({ ...magneticSettings, itemsShown: 'both' }, 2);
+  near(mesh.bounds[0][1], -97);
+  near(mesh.bounds[1][1], 95);
+  near(mesh.bounds[1][2], 45);
+});
+
+test('explicit sliding selection preserves both existing geometry definitions', () => {
+  for (const itemsShown of ['box', 'lid']) {
+    const settings = { withLid: true, itemsShown, withLidArtwork: false, withLidLogo: false };
+    const explicit = run({ ...settings, lidStyle: 'sliding' }, 'csg'), implicit = run(settings, 'csg');
+    assert.equal(explicit.status, 0, explicit.log);
+    assert.equal(implicit.status, 0, implicit.log);
+    assert.equal(readFileSync(explicit.output, 'utf8'), readFileSync(implicit.output, 'utf8'));
+  }
+});
+
+test('inactive magnetic parameters are ignored by lidless and sliding modes', () => {
+  for (const settings of [{ withLid: false, lidStyle: 'magnetic' }, { withLid: true, lidStyle: 'sliding' }]) {
+    const base = { ...settings, itemsShown: 'both', withLidArtwork: false, withLidLogo: false };
+    const original = run(base, 'csg');
+    const modified = run({ ...base, magneticLidThickness: -1, magnetDiameter: 'unused',
+      magnetThickness: 0, magnetPocketClearance: -5, magnetRecess: -3, magneticLidClearance: 0,
+      magneticLidLocatorDepth: 'unused', magneticLidLipThickness: 'unused' }, 'csg');
+    assert.doesNotMatch(modified.log, /ERROR:|WARNING:/i);
+    assert.equal(readFileSync(modified.output, 'utf8'), readFileSync(original.output, 'utf8'));
+  }
+  const disabled = run({ withLid: false, lidStyle: 'magnetic', itemsShown: 'lid' }, 'csg');
+  assert.match(disabled.log, /Lid disabled: set withLid=true/);
+});
+
+test('magnetic disabled engravings do not import SVGs', () => {
+  render({ ...magneticSettings, itemsShown: 'lid',
+    lidArtworkFile: 'missing-robot.svg', lidLogoFile: 'missing-logo.svg' });
+});
+
+test('magnetic invalid parameters fail with actionable assertions', () => {
+  for (const [settings, expected] of [
+    [{ lidStyle: 'hinged' }, /lidStyle must be sliding or magnetic/],
+    [{ magneticLidThickness: 0 }, /magneticLidThickness must be positive/],
+    [{ magneticLidThickness: '5' }, /magneticLidThickness must be positive/],
+    [{ magnetDiameter: '3' }, /magnetDiameter must be positive/],
+    [{ magnetDiameter: 0 }, /magnetDiameter must be positive/],
+    [{ magnetThickness: -1 }, /magnetThickness must be positive/],
+    [{ magnetThickness: '3' }, /magnetThickness must be positive/],
+    [{ magnetPocketClearance: -0.1 }, /magnetPocketClearance must be nonnegative/],
+    [{ magnetRecess: -0.1 }, /magnetRecess must be nonnegative/],
+    [{ magnetRecess: '0.1' }, /magnetRecess must be nonnegative/],
+    [{ magneticLidClearance: 0 }, /magneticLidClearance must be positive/],
+    [{ magneticLidLocatorDepth: '2' }, /magneticLidLocatorDepth must be positive/],
+    [{ magneticLidLocatorDepth: 0 }, /magneticLidLocatorDepth must be positive/],
+    [{ magneticLidLipThickness: 0 }, /magneticLidLipThickness must be positive/],
+    [{ magneticLidLipThickness: 'thin' }, /magneticLidLipThickness must be positive/],
+    [{ magneticLidThickness: 4 }, /1 mm of skin above the magnet pockets/],
+    [{ boxLength: 20 }, /pads and inset lip must fit/],
+    [{ boxWidth: 20 }, /pads and inset lip must fit/],
+    [{ boxLength: 24.59, pullLedges: 'none' }, /pads and inset lip must fit/],
+    [{ boxWidth: 24.19, pullLedges: 'none' }, /pads and inset lip must fit/],
+    [{ cornerRadius: 43 }, /pads and inset lip must fit/],
+    [{ magneticLidClearance: 100 }, /pads and inset lip must fit/],
+    [{ boxHeight: 12, pullLedges: 'none' }, /pad undersides must clear the floor/],
+    [{ magneticLidLocatorDepth: 50, pullLedges: 'none' }, /inset lip must clear the floor/],
+    [{ pullTopOffset: 7.49 }, /pullTopOffset must clear the magnetic lip/],
+    [{ dividerCountX: 1, dividerHeight: 40.51 }, /dividerHeight must not exceed 40.5/],
+    [{ itemsShown: 'lid', withLidLogo: true, lidLogoDepth: 0.91 }, /engraving must leave at least 1 mm/],
+    [{ itemsShown: 'lid', withLidArtwork: true, lidArtworkDepth: 'deep' }, /depth must be positive and numeric/],
+    [{ itemsShown: 'lid', withLidArtwork: true, lidArtworkDepth: 0.91 }, /engraving must leave at least 1 mm/],
+    [{ itemsShown: 'lid', withLidLogo: true, lidLogoMargin: 0.49 }, /margin must clear the magnetic edge/],
+  ]) {
+    const result = run({ ...magneticSettings, itemsShown: 'box', ...settings }, 'csg');
+    assert.match(result.log, /ERROR: Assertion/, JSON.stringify(settings));
+    assert.match(result.log, expected, JSON.stringify(settings));
+    assert.doesNotMatch(result.log, /WARNING:/i, JSON.stringify(settings));
+  }
+});
+
+function planeVertices(mesh, z) {
+  return mesh.triangles.filter(t => t.every(v => Math.abs(v[2] - z) < 1e-5)).flat();
+}
+
+for (const style of ['sliding', 'magnetic']) {
+  test(`${style} lid text respects the selected font, size, depth, and exterior orientation`, () => {
+    const widths = [];
+    for (const font of ['Liberation Sans:style=Bold', 'Liberation Mono:style=Regular']) {
+      const settings = { ...magneticSettings, lidStyle: style, itemsShown: 'lid',
+        withLidText: true, lidText: 'Tools', lidTextFont: font, lidTextDepth: 0.6 };
+      const mesh = render(settings);
+      const bottom = style === 'magnetic' ? 0.6 : 1.4;
+      const vertices = planeVertices(mesh, bottom);
+      assert.ok(vertices.length > 0, 'The label must actually be engraved');
+      const xs = vertices.map(v => v[0]), ys = vertices.map(v => v[1]);
+      widths.push(Math.max(...xs) - Math.min(...xs));
+      const w = style === 'magnetic' ? 95 : 92.8;
+      const yMin = style === 'magnetic' ? -22 : -w - 2;
+      const yMax = style === 'magnetic' ? -2 : -w - 2 + 20;
+      assert.ok(Math.min(...xs) >= 4 && Math.max(...xs) <= (style === 'magnetic' ? 156 : 155));
+      assert.ok(Math.min(...ys) >= yMin + 4 && Math.max(...ys) <= yMax - 4,
+        `Label bounds ${Math.min(...ys)}..${Math.max(...ys)} must fit band margins ${yMin + 4}..${yMax - 4}`);
+      const triangle = mesh.triangles.find(t => t.every(v => Math.abs(v[2] - bottom) < 1e-5));
+      const x = triangle.reduce((sum, v) => sum + v[0], 0) / 3;
+      const y = triangle.reduce((sum, v) => sum + v[1], 0) / 3;
+      const direction = style === 'magnetic' ? -1 : 1;
+      assert.equal(mesh.contains([x, y, bottom + direction * 0.1]), false);
+      assert.equal(mesh.contains([x, y, bottom - direction * 0.1]), true, 'Text does not cut through');
+    }
+    assert.ok(Math.abs(widths[0] - widths[1]) > 0.5, 'Selecting a different installed font changes glyph geometry');
+  });
+}
+
+test('text size is adjustable for longer labels without distorting the font', () => {
+  const label = 'Small tools - metric screws';
+  const meshes = [4, 6].map(size => render({ ...magneticSettings, itemsShown: 'lid',
+    withLidText: true, lidText: label, lidTextSize: size }));
+  const widths = meshes.map(mesh => {
+    const xs = planeVertices(mesh, 0.5).map(v => v[0]);
+    return Math.max(...xs) - Math.min(...xs);
+  });
+  near(widths[1] / widths[0], 1.5, 0.002);
+  assert.ok(widths[1] < 152, 'Long test label fits at the selected smaller size');
+});
+
+const layoutArtwork = join(temporary, 'layout-artwork.svg');
+writeFileSync(layoutArtwork, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 40">' +
+  '<path d="M4 4H16V36H4ZM8 8V32H12V8Z" fill-rule="evenodd"/></svg>');
+
+for (const style of ['sliding', 'magnetic']) {
+  test(`${style} lid supports every independent artwork, logo, and text combination`, () => {
+    for (let mask = 0; mask < 8; mask++) {
+      const settings = { ...magneticSettings, lidStyle: style, itemsShown: 'lid',
+        withLidArtwork: Boolean(mask & 1), withLidLogo: Boolean(mask & 2), withLidText: Boolean(mask & 4),
+        lidArtworkFile: layoutArtwork, lidArtworkAspect: 2, lidArtworkDepth: 0.4,
+        lidLogoDepth: 0.5, lidTextDepth: 0.6, lidText: 'Tools' };
+      const mesh = render(settings);
+      for (const [flag, depth] of [[1, 0.4], [2, 0.5], [4, 0.6]]) {
+        const vertices = planeVertices(mesh, style === 'magnetic' ? depth : 2 - depth);
+        assert.equal(vertices.length > 0, Boolean(mask & flag), `style=${style}, mask=${mask}, feature=${flag}`);
+        if (mask & 4 && flag === 1) {
+          const boundary = style === 'magnetic' ? -22 : -74.8;
+          assert.ok(vertices.every(v => style === 'magnetic' ? v[1] < boundary : v[1] > boundary),
+            'Artwork is fitted outside the reserved text band');
+        }
+      }
+    }
+  });
+}
+
+test('disabled text leaves the other decorations unchanged and ignores unused settings', () => {
+  for (const style of ['sliding', 'magnetic']) {
+    const settings = { withLid: true, lidStyle: style, itemsShown: 'lid', withLidArtwork: false };
+    const base = run(settings, 'csg');
+    const disabled = run({ ...settings, withLidText: false, lidText: 123,
+      lidTextFont: '', lidTextSize: -1, lidTextDepth: 'unused',
+      lidTextBandHeight: -1, lidTextMargin: -1 }, 'csg');
+    assert.doesNotMatch(disabled.log, /ERROR:|WARNING:|Text uses font/i);
+    assert.equal(readFileSync(base.output, 'utf8'), readFileSync(disabled.output, 'utf8'));
+  }
+  for (const settings of [{ withLid: false, itemsShown: 'both' },
+    { withLid: true, lidStyle: 'sliding', itemsShown: 'box' },
+    { withLid: true, lidStyle: 'magnetic', itemsShown: 'box' }]) {
+    const result = run({ ...settings, withLidText: true, lidText: '', lidTextFont: '', lidTextSize: -1 }, 'csg');
+    assert.doesNotMatch(result.log, /ERROR:|WARNING:|Text uses font/i);
+  }
+});
+
+test('invalid lid text settings fail explicitly without geometry warnings', () => {
+  for (const [settings, expected] of [
+    [{ lidText: '' }, /lidText must be a nonempty string/],
+    [{ lidText: 123 }, /lidText must be a nonempty string/],
+    [{ lidText: '   ' }, /lidText must contain visible characters/],
+    [{ lidText: 'Two\nlines' }, /single line without tabs or line breaks/],
+    [{ lidTextFont: '' }, /lidTextFont must name an installed font/],
+    [{ lidTextSize: 0 }, /lidTextSize must be positive/],
+    [{ lidTextSize: '8' }, /lidTextSize must be positive/],
+    [{ lidTextDepth: 0 }, /lidTextDepth must be positive/],
+    [{ lidTextDepth: 5 }, /less than the active lid thickness/],
+    [{ lidTextDepth: 0.91 }, /engraving must leave at least 1 mm/],
+    [{ lidTextBandHeight: 0 }, /lidTextBandHeight must be positive/],
+    [{ lidTextBandHeight: 95 }, /smaller than the lid width/],
+    [{ lidTextBandHeight: 19.99 }, /at least 1.5\*lidTextSize/],
+    [{ lidTextMargin: -1 }, /lidTextMargin must clear/],
+    [{ lidTextMargin: '4' }, /lidTextMargin must clear/],
+    [{ lidStyle: 'sliding', lidTextMargin: 1 }, /lidTextMargin must clear/],
+    [{ lidStyle: 'sliding', lidTextDepth: 2 }, /less than the active lid thickness/],
+    [{ withLidArtwork: true, lidTextBandHeight: 90 }, /too small for the artwork margins/],
+  ]) {
+    const result = run({ ...magneticSettings, itemsShown: 'lid', withLidText: true, ...settings }, 'csg');
+    assert.match(result.log, /ERROR: Assertion/, JSON.stringify(settings));
+    assert.match(result.log, expected, JSON.stringify(settings));
+    assert.doesNotMatch(result.log, /WARNING:/i, JSON.stringify(settings));
   }
 });
