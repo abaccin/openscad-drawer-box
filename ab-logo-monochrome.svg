@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="2048" viewBox="0 0 100 100" fill="currentColor" role="img" aria-labelledby="title desc">
+  <title id="title">AB monochrome badge</title>
+  <desc id="desc">Rounded square badge with tall cutout AB lettering above four evenly spaced blocks. Single-color vector artwork with a transparent background.</desc>
+  <path fill-rule="evenodd" d="
+    M13 5.5 H87 A7.5 7.5 0 0 1 94.5 13
+    V87 A7.5 7.5 0 0 1 87 94.5
+    H13 A7.5 7.5 0 0 1 5.5 87
+    V13 A7.5 7.5 0 0 1 13 5.5 Z
+    M13 8.5 H87 A4.5 4.5 0 0 1 91.5 13
+    V87 A4.5 4.5 0 0 1 87 91.5
+    H13 A4.5 4.5 0 0 1 8.5 87
+    V13 A4.5 4.5 0 0 1 13 8.5 Z
+  "/>
+  <path fill-rule="evenodd" d="
+    M14 12 H86 Q88 12 88 14 V67 H12 V14 Q12 12 14 12 Z
+    M21 62 L29.5 17 H41 L49.5 62 H40.5
+    L39 53 H31.5 L30 62 Z
+    M32.7 45 H37.8 L35.25 27 Z
+    M53 17 H66.5
+    C75 17 79 21.3 79 28.5
+    V30 C79 34.5 77.4 37.4 74.3 39
+    C78.1 40.5 80 43.9 80 48.5
+    V50 C80 58 75.4 62 67 62 H53 Z
+    M62 24 V35 H65.5
+    C68.8 35 70 33.3 70 29.5
+    C70 25.7 68.8 24 65.5 24 Z
+    M62 43 V55 H66
+    C69.6 55 71 53.2 71 49
+    C71 44.8 69.6 43 66 43 Z
+  "/>
+  <rect x="12" y="73" width="16" height="11" rx="1.5"/>
+  <rect x="32" y="73" width="16" height="11" rx="1.5"/>
+  <rect x="52" y="73" width="16" height="11" rx="1.5"/>
+  <rect x="72" y="73" width="16" height="11" rx="1.5"/>
+</svg>
