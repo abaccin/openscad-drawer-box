@@ -31,9 +31,9 @@ dividerCountY=0;
 dividerHeight=25;
 // Thickness shared by all divider walls; independent of the outer wall thickness.
 dividerThickness=1.2;
-// [] spaces X compartments equally. Otherwise enter dividerCountX clear lengths, e.g. [40,55] for 2 walls; the final compartment uses the remainder.
+// Enter up to dividerCountX leading clear lengths from X=0; remaining compartments share the leftover space equally. [] spaces all equally.
 compartmentSizesX=[];
-// [] spaces Y compartments equally. Otherwise enter dividerCountY clear widths from Y=0; the final compartment uses the remainder.
+// Enter up to dividerCountY leading clear widths from Y=0; remaining compartments share the leftover space equally. [] spaces all equally.
 compartmentSizesY=[];
 
 /* [Stacking] */
@@ -517,19 +517,22 @@ function dividerPositions(span,count,thickness,sizes,axis)=
 	assert(is_num(count) && count>=0 && count==floor(count),
 		   str("dividerCount",axis," must be a nonnegative integer."))
 	assert(is_list(sizes),str("compartmentSizes",axis," must be a list."))
-	assert(len(sizes)==0 || len(sizes)==count,
-		   str("compartmentSizes",axis," must be [] or contain exactly ",count," clear sizes."))
+	assert(len(sizes)<=count,
+		   str("compartmentSizes",axis," must contain at most ",count," clear sizes."))
 	assert(len([for (size=sizes) if (!is_num(size) || size<=0) 1])==0,
 		   str("compartmentSizes",axis," must contain positive numbers."))
 	assert(count==0 || (is_num(thickness) && thickness>0),
 		   "dividerThickness must be positive when divisions are enabled.")
 	count==0 ? [] :
-	let(clearSpace=span-count*thickness)
+	let(clearSpace=span-count*thickness,
+		suppliedSpace=sizeSum(sizes,len(sizes)))
 	assert(clearSpace>0,str("Divider thickness leaves no compartment space along ",axis,"."))
-	assert(sizeSum(sizes,len(sizes))<clearSpace,
-		   str("compartmentSizes",axis," plus divider thicknesses must leave a positive final compartment."))
+	assert(suppliedSpace<clearSpace,
+		   str("compartmentSizes",axis," plus divider thicknesses must leave positive space for remaining compartments."))
+	let(remainingSize=(clearSpace-suppliedSpace)/(count+1-len(sizes)))
 	[for (i=[0:count-1])
-		(len(sizes)==0 ? (i+1)*clearSpace/(count+1) : sizeSum(sizes,i+1))+i*thickness];
+		(i<len(sizes) ? sizeSum(sizes,i+1) :
+		 suppliedSpace+(i+1-len(sizes))*remainingSize)+i*thickness];
 
 module internalDivisions(l,w,bt,wt,r,floorHeight,topLimit,
 						 countX,countY,height,thickness,sizesX,sizesY,facets=30){
