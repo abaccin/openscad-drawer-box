@@ -156,6 +156,86 @@ test('custom sizes preserve clear measurements and allocate the final remainder'
   }
 });
 
+for (const [axis, span, thickness, sizes, expected] of [
+  ['X', 158, 1.2, [], Array(6).fill(152 / 6)],
+  ['X', 158, 1.2, [40], [40, 22.4, 22.4, 22.4, 22.4, 22.4]],
+  ['X', 158, 1.2, [40, 30], [40, 30, 20.5, 20.5, 20.5, 20.5]],
+  ['X', 158, 1.2, [40, 30, 20, 15], [40, 30, 20, 15, 23.5, 23.5]],
+  ['X', 158, 1.2, [40, 30, 20, 15, 10], [40, 30, 20, 15, 10, 37]],
+  ['Y', 93, 1.2, [], Array(6).fill(14.5)],
+  ['Y', 93, 1.2, [20], [20, 13.4, 13.4, 13.4, 13.4, 13.4]],
+  ['Y', 93, 1.2, [20, 15], [20, 15, 13, 13, 13, 13]],
+  ['Y', 93, 1.2, [20, 15, 10, 8], [20, 15, 10, 8, 17, 17]],
+  ['Y', 93, 1.2, [20, 15, 10, 8, 7], [20, 15, 10, 8, 7, 27]],
+  ['X', 176.8, 2.4, [35, 25], [35, 25, 26.2, 26.2, 26.2, 26.2]],
+  ['Y', 106.8, 2.4, [10, 20], [10, 20, 16.2, 16.2, 16.2, 16.2]],
+  ['X', 158, 1.2, [151.95], [151.95, 0.01, 0.01, 0.01, 0.01, 0.01]],
+  ['Y', 93, 1.2, [86.95], [86.95, 0.01, 0.01, 0.01, 0.01, 0.01]],
+]) {
+  test(`compartment sizes along ${axis} preserve ${JSON.stringify(sizes)} within ${span} mm`, () => {
+    let offset = 0;
+    const expectedPositions = expected.slice(0, -1).map(size => {
+      const position = offset + size;
+      offset = position + thickness;
+      return position;
+    });
+    const result = run({ itemsShown: 'lid' }, 'csg', `
+      positions=dividerPositions(${span},5,${thickness},${JSON.stringify(sizes)},"${axis}");
+      expectedPositions=${JSON.stringify(expectedPositions)};
+      expectedSizes=${JSON.stringify(expected)};
+      assert(len(positions)==5);
+      for (i=[0:4]) assert(abs(positions[i]-expectedPositions[i])<1e-8);
+      actualSizes=concat([positions[0]],
+        [for (i=[1:4]) positions[i]-positions[i-1]-${thickness}],
+        [${span}-positions[4]-${thickness}]);
+      assert(len(actualSizes)==6);
+      for (i=[0:5]) assert(abs(actualSizes[i]-expectedSizes[i])<1e-8);
+      assert(abs(sizeSum(actualSizes,6)+5*${thickness}-${span})<1e-8);
+    `);
+    assert.equal(result.status, 0, result.log);
+    assert.doesNotMatch(result.log, /ERROR:|WARNING:/i);
+  });
+}
+
+test('compartment sizes with zero dividers produce no wall positions on either axis', () => {
+  const result = run({ itemsShown: 'lid' }, 'csg', `
+    assert(dividerPositions(158,0,1.2,[],"X")==[]);
+    assert(dividerPositions(93,0,1.2,[],"Y")==[]);
+  `);
+  assert.equal(result.status, 0, result.log);
+  assert.doesNotMatch(result.log, /ERROR:|WARNING:/i);
+});
+
+for (const [sizesX, sizesY, expectedX, expectedY] of [
+  [[40], [20, 15], [40, 22.4, 22.4, 22.4, 22.4, 22.4], [20, 15, 13, 13, 13, 13]],
+  [[40, 30], [20], [40, 30, 20.5, 20.5, 20.5, 20.5], [20, 13.4, 13.4, 13.4, 13.4, 13.4]],
+]) {
+  test(`partial grid preserves ${sizesX.length} X and ${sizesY.length} Y sizes and fills the remainder`, () => {
+    const mesh = render({ dividerCountX: 5, dividerCountY: 5,
+      compartmentSizesX: sizesX, compartmentSizesY: sizesY });
+    const centers = [expectedX, expectedY].map((sizes, axis) => {
+      let start = 1;
+      return sizes.map((size, i) => {
+        const center = start + size / 2;
+        const face = start + size;
+        if (i < sizes.length - 1) {
+          const point = coordinate => axis === 0
+            ? [coordinate, 1 + expectedY[0] / 2, 15]
+            : [1 + expectedX[0] / 2, coordinate, 15];
+          assert.equal(mesh.contains(point(face - 0.1)), false);
+          assert.equal(mesh.contains(point(face + 0.6)), true);
+          assert.equal(mesh.contains(point(face + 1.3)), false);
+        }
+        start = face + 1.2;
+        return center;
+      });
+    });
+    for (const x of centers[0]) {
+      for (const y of centers[1]) assert.equal(mesh.contains([x, y, 15]), false);
+    }
+  });
+}
+
 for (const [name, settings, floor, height, point] of [
   ['stacking', { dividerCountX: 1 }, 5, 41.5, [80, 20]],
   ['lid rails', { withLid: true, dividerCountY: 1 }, 2, 44.5, [80, 47.5]],
@@ -228,13 +308,23 @@ const invalid = [
   [{ dividerCountX: -1 }, /dividerCountX must be a nonnegative integer/],
   [{ dividerCountY: 1.5 }, /dividerCountY must be a nonnegative integer/],
   [{ dividerCountX: '2' }, /dividerCountX must be a nonnegative integer/],
-  [{ compartmentSizesX: [20] }, /exactly 0 clear sizes/],
-  [{ dividerCountX: 2, compartmentSizesX: [40] }, /exactly 2 clear sizes/],
+  [{ compartmentSizesX: [20] }, /at most 0 clear sizes/],
+  [{ compartmentSizesY: [20] }, /at most 0 clear sizes/],
+  [{ dividerCountX: 2, compartmentSizesX: [40, 30, 20] }, /at most 2 clear sizes/],
+  [{ dividerCountY: 2, compartmentSizesY: [20, 15, 10] }, /at most 2 clear sizes/],
+  [{ dividerCountX: 5, compartmentSizesX: 40 }, /must be a list/],
   [{ dividerCountY: 1, compartmentSizesY: 30 }, /must be a list/],
   [{ dividerCountY: 1, compartmentSizesY: [0] }, /positive numbers/],
   [{ dividerCountX: 1, compartmentSizesX: ['40'] }, /positive numbers/],
-  [{ dividerCountX: 1, compartmentSizesX: [156.8] }, /positive final compartment/],
-  [{ dividerCountY: 1, compartmentSizesY: [94] }, /positive final compartment/],
+  [{ dividerCountX: 5, compartmentSizesX: [40, 0] }, /positive numbers/],
+  [{ dividerCountY: 5, compartmentSizesY: [20, -1] }, /positive numbers/],
+  [{ dividerCountY: 5, compartmentSizesY: [20, '15'] }, /positive numbers/],
+  [{ dividerCountX: 1, compartmentSizesX: [156.8] }, /positive space for remaining compartments/],
+  [{ dividerCountY: 1, compartmentSizesY: [94] }, /positive space for remaining compartments/],
+  [{ dividerCountX: 5, compartmentSizesX: [152] }, /positive space for remaining compartments/],
+  [{ dividerCountY: 5, compartmentSizesY: [87] }, /positive space for remaining compartments/],
+  [{ dividerCountX: 5, compartmentSizesX: [100, 53] }, /positive space for remaining compartments/],
+  [{ dividerCountY: 5, compartmentSizesY: [50, 38] }, /positive space for remaining compartments/],
   [{ dividerCountX: 1, dividerThickness: 0 }, /dividerThickness must be positive/],
   [{ dividerCountY: 100 }, /no compartment space along Y/],
   [{ dividerCountX: 1, dividerHeight: 0 }, /dividerHeight must be positive/],

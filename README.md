@@ -106,8 +106,8 @@ to change; geometry calculations remain below the settings.
 | `dividerCountY` | `0` | Number of walls across the inside width, making `dividerCountY + 1` rows along Y. |
 | `dividerHeight` | `25` | Wall height above the interior floor, shared by both directions. |
 | `dividerThickness` | `1.2` | Thickness of all divider walls, independent of the outside walls. |
-| `compartmentSizesX` | `[]` | Empty for equal spacing; otherwise one clear length per X divider, starting at X=0. The last compartment uses the remaining length. |
-| `compartmentSizesY` | `[]` | Empty for equal spacing; otherwise one clear width per Y divider, starting at Y=0. The last compartment uses the remaining width. |
+| `compartmentSizesX` | `[]` | Up to `dividerCountX` leading clear lengths, starting at X=0. Unspecified compartments share the remaining length equally; `[]` makes all equal. |
+| `compartmentSizesY` | `[]` | Up to `dividerCountY` leading clear widths, starting at Y=0. Unspecified compartments share the remaining width equally; `[]` makes all equal. |
 
 Counts describe **walls, not compartments**: `dividerCountX=2` and
 `dividerCountY=1` make a **3 by 2 grid (six compartments)**. Zero disables
@@ -121,10 +121,20 @@ For equal spacing, the clear size on either axis is:
 / (divider count + 1)
 ```
 
-For unequal sizes, provide exactly as many entries as divider walls on
+For unequal sizes, provide up to as many entries as divider walls on
 that axis. Entries specify **clear compartment sizes**, excluding divider
 thickness, measured from the inner face of the wall nearest X=0 or Y=0.
-The final compartment receives the remainder; the box is not resized.
+The supplied sizes fix the leading compartments in order. All unspecified
+compartments share the remaining clear space equally; the box is not resized.
+With `K` supplied sizes, each unspecified compartment receives:
+
+```text
+(outside size - 2*wallThickness - divider count*dividerThickness
+ - sum(supplied sizes)) / (divider count + 1 - K)
+```
+
+If there is one supplied size per divider, only the final compartment is
+unspecified and it receives the entire remainder, as before.
 For example, with the default box dimensions:
 
 ```scad
@@ -137,8 +147,21 @@ compartmentSizesY=[30];
 ```
 
 This makes three columns of **40, 55, and 60.6 mm** and two rows of
-**30 and 61.8 mm**. Set the size lists back to `[]` for equal spacing,
-or update them whenever you change the counts. Edit these variable-length
+**30 and 61.8 mm**.
+
+For five dividers (six compartments), shorter lists work on either axis.
+Using the default box dimensions and thicknesses:
+
+| Divider setting | Size list | Clear compartment sizes (mm) |
+| --- | --- | --- |
+| `dividerCountY=5` | `compartmentSizesY=[20]` | 20, 13.4, 13.4, 13.4, 13.4, 13.4 |
+| `dividerCountY=5` | `compartmentSizesY=[20,15]` | 20, 15, 13, 13, 13, 13 |
+| `dividerCountX=5` | `compartmentSizesX=[40]` | 40, 22.4, 22.4, 22.4, 22.4, 22.4 |
+| `dividerCountX=5` | `compartmentSizesX=[40,30]` | 40, 30, 20.5, 20.5, 20.5, 20.5 |
+
+Set the size lists back to `[]` for equal spacing. When reducing a divider
+count, shorten its size list if necessary so it has no more entries than
+the new count; a zero count requires `[]`. Edit these variable-length
 lists in the source; OpenSCAD's Customizer has limited support for vectors.
 Rounded corners and pull
 ledges reduce usable space locally; these measurements are between the
@@ -446,9 +469,10 @@ For stackable boxes, the underside clearance is measured from the raised
 interior floor.
 
 Divider counts must be nonnegative integers. Enabled divisions require
-positive height and thickness. Size lists must be empty or contain exactly
-one positive number per divider on that axis; the sizes plus all divider
-thicknesses must leave a positive final compartment. Dividers must fit
+positive height and thickness. Size lists must contain only positive numbers
+and no more entries than the divider count on that axis. The supplied sizes
+plus all divider thicknesses must leave positive space for the remaining
+compartments; invalid lists are rejected, not trimmed or rescaled. Dividers must fit
 above the floor and below the relevant lid/stacking height limit.
 
 For each lid engraving, the depth must be positive and less than the active
@@ -506,7 +530,9 @@ node --test tests\model.test.mjs
 ```
 
 On systems where `openscad` is on PATH, `OPENSCAD` can be omitted.
-Checks render STL meshes for grid, height, sliding/magnetic lid, and decoration
+Checks verify exact divider positions and clear sizes for empty, partial, and
+full size lists on both axes. They also render STL meshes for grid (including
+partially specified X/Y grids), height, sliding/magnetic lid, and decoration
 configurations; inspect watertightness, connected parts and perimeter lips,
 pocket dimensions, and actual assembled clearance; and exercise invalid
 parameter assertions. Decoration checks cover all artwork/logo/text combinations
