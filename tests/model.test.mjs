@@ -486,7 +486,7 @@ test('magnetic engravings combine real artwork, logo, and text on the exterior a
   const engraved = mesh.triangles.filter(t => t.every(v => Math.abs(v[2] - 0.5) < 1e-5));
   assert.ok(engraved.some(t => t.every(v => v[0] < 20)), 'Personal logo is engraved into exterior Z=0');
   assert.ok(engraved.some(t => t.every(v => v[0] > 20 && v[1] < -22)), 'Robot stays outside the text band');
-  assert.ok(engraved.some(t => t.every(v => v[0] > 20 && v[1] > -22)), 'Text occupies its own exterior band');
+  assert.ok(engraved.some(t => t.every(v => v[0] > 20)), 'Text is engraved on the exterior face');
   const d = magneticDimensions({});
   const logoPoint = (x, y, z) => d.printPoint([10 + (x - 50) * 12 / 89,
     47.5 - (50 - y) * 12 / 89, z]);
@@ -593,12 +593,10 @@ for (const style of ['sliding', 'magnetic']) {
       assert.ok(vertices.length > 0, 'The label must actually be engraved');
       const xs = vertices.map(v => v[0]), ys = vertices.map(v => v[1]);
       widths.push(Math.max(...xs) - Math.min(...xs));
-      const w = style === 'magnetic' ? 95 : 92.8;
-      const yMin = style === 'magnetic' ? -22 : -w - 2;
-      const yMax = style === 'magnetic' ? -2 : -w - 2 + 20;
-      assert.ok(Math.min(...xs) >= 4 && Math.max(...xs) <= (style === 'magnetic' ? 156 : 155));
-      assert.ok(Math.min(...ys) >= yMin + 4 && Math.max(...ys) <= yMax - 4,
-        `Label bounds ${Math.min(...ys)}..${Math.max(...ys)} must fit band margins ${yMin + 4}..${yMax - 4}`);
+      const xCenter = style === 'magnetic' ? 80 : 79.5;
+      const yCenter = style === 'magnetic' ? -49.5 : -48.4;
+      near((Math.min(...xs) + Math.max(...xs)) / 2, xCenter, 0.5);
+      near((Math.min(...ys) + Math.max(...ys)) / 2, yCenter, 1.5);
       const triangle = mesh.triangles.find(t => t.every(v => Math.abs(v[2] - bottom) < 1e-5));
       const x = triangle.reduce((sum, v) => sum + v[0], 0) / 3;
       const y = triangle.reduce((sum, v) => sum + v[1], 0) / 3;
@@ -607,6 +605,32 @@ for (const style of ['sliding', 'magnetic']) {
       assert.equal(mesh.contains([x, y, bottom - direction * 0.1]), true, 'Text does not cut through');
     }
     assert.ok(Math.abs(widths[0] - widths[1]) > 0.5, 'Selecting a different installed font changes glyph geometry');
+  });
+}
+
+for (const style of ['sliding', 'magnetic']) {
+  test(`${style} lid text positions default to center and honor X/Y coordinates`, () => {
+    const base = { ...magneticSettings, lidStyle: style, itemsShown: 'lid',
+      withLidText: true, lidText: 'AB', withLidArtwork: false, withLidLogo: false };
+    const positions = [[undefined, undefined], [30, 25], [130, 70]];
+    const bounds = positions.map(([lidTextPositionX, lidTextPositionY]) => {
+      const settings = { ...base };
+      if (lidTextPositionX !== undefined) settings.lidTextPositionX = lidTextPositionX;
+      if (lidTextPositionY !== undefined) settings.lidTextPositionY = lidTextPositionY;
+      const mesh = render(settings);
+      const vertices = planeVertices(mesh, style === 'magnetic' ? 0.5 : 1.5);
+      return [Math.min(...vertices.map(v => v[0])), Math.max(...vertices.map(v => v[0])),
+        Math.min(...vertices.map(v => v[1])), Math.max(...vertices.map(v => v[1]))];
+    });
+    const [centered, first, second] = bounds;
+    const expectedCenter = style === 'magnetic' ? [80, -49.5] : [79.5, -48.4];
+    near((centered[0] + centered[1]) / 2, expectedCenter[0], 0.1);
+    near((centered[2] + centered[3]) / 2, expectedCenter[1], 1.5);
+    near((first[0] + first[1] - centered[0] - centered[1]) / 2, 30 - expectedCenter[0], 0.001);
+    near((first[2] + first[3] - centered[2] - centered[3]) / 2,
+      style === 'magnetic' ? 47.5 - 25 : 25 - 46.4, 0.001);
+    near((second[0] + second[1] - first[0] - first[1]) / 2, 100, 0.001);
+    near((second[2] + second[3] - first[2] - first[3]) / 2, style === 'magnetic' ? -45 : 45, 0.001);
   });
 }
 
@@ -653,7 +677,8 @@ test('disabled text leaves the other decorations unchanged and ignores unused se
     const base = run(settings, 'csg');
     const disabled = run({ ...settings, withLidText: false, lidText: 123,
       lidTextFont: '', lidTextSize: -1, lidTextDepth: 'unused',
-      lidTextBandHeight: -1, lidTextMargin: -1 }, 'csg');
+      lidTextBandHeight: -1, lidTextMargin: -1, lidTextPositionX: 'unused',
+      lidTextPositionY: 'unused' }, 'csg');
     assert.doesNotMatch(disabled.log, /ERROR:|WARNING:|Text uses font/i);
     assert.equal(readFileSync(base.output, 'utf8'), readFileSync(disabled.output, 'utf8'));
   }
@@ -682,6 +707,8 @@ test('invalid lid text settings fail explicitly without geometry warnings', () =
     [{ lidTextBandHeight: 19.99 }, /at least 1.5\*lidTextSize/],
     [{ lidTextMargin: -1 }, /lidTextMargin must clear/],
     [{ lidTextMargin: '4' }, /lidTextMargin must clear/],
+    [{ lidTextPositionX: '80' }, /lidTextPositionX must be a number or undef/],
+    [{ lidTextPositionY: [] }, /lidTextPositionY must be a number or undef/],
     [{ lidStyle: 'sliding', lidTextMargin: 1 }, /lidTextMargin must clear/],
     [{ lidStyle: 'sliding', lidTextDepth: 2 }, /less than the active lid thickness/],
     [{ withLidArtwork: true, lidTextBandHeight: 90 }, /too small for the artwork margins/],

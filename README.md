@@ -61,7 +61,8 @@ Text needs an installed font, not an SVG or an external OpenSCAD library.
 6. Optionally enable `withLidText=true`, enter `lidText`, and choose
    `lidTextFont` from **Help > Font List**. This works on either lid style,
    independently of artwork and logo. The robot moves into the area left
-   after reserving the text band; adjust text size and preview the full label.
+   after reserving the text band; adjust text size and position, then preview
+   the full label.
 7. Export parts separately: select `itemsShown="box"`, press **F6** to
    render, then choose **File > Export > Export as STL**. For a matching
    lid, keep the same dimensions, `withLid=true`, and the same `lidStyle`, select
@@ -402,12 +403,26 @@ lidTextSize=8;
 | `lidTextSize` | `8` | OpenSCAD nominal text size in mm; keeps the font's natural proportions. |
 | `lidTextDepth` | `0.5` | Engraving depth; magnetic pocket/skin limits also apply. |
 | `lidTextBandHeight` | `20` | Space reserved along Y for the label, reducing the robot's available area. |
-| `lidTextMargin` | `4` | Empty margin around the text area, including edge/bevel clearance. |
+| `lidTextMargin` | `4` | Empty margin around the reserved text band, including edge/bevel clearance. |
+| `lidTextPositionX` | `undef` | Label center from the lid's X=0 edge in mm; `undef` centers it across the active lid length. |
+| `lidTextPositionY` | `undef` | Label center from the lid's Y=0 edge in mm; `undef` centers it across the active lid width. |
 
-The label is centered in the band, beside rather than over the logo strip.
-Its available width is the lid length minus the enabled logo strip and
-`2*lidTextMargin`; its available height is
-`lidTextBandHeight - 2*lidTextMargin`. The band must be at least
+By default, the label is centered on the active lid in both X and Y. Set
+`lidTextPositionX` and `lidTextPositionY` to numeric millimeter coordinates
+to place the label center explicitly. Coordinates are measured from the
+lid's X=0/Y=0 outer corner before the model applies its display translation
+or magnetic-lid rotation:
+
+```scad
+// Center the label at X=80 mm, Y=25 mm from the lid's X=0/Y=0 edges.
+lidTextPositionX=80;
+lidTextPositionY=25;
+```
+
+`lidTextBandHeight` still reserves space for artwork at the Y=0 end of the
+lid, but no longer restricts text placement. The label can deliberately
+overlap artwork or the logo, or extend beyond the lid: preview the complete
+label before export. The band must be at least
 `1.5*lidTextSize + 2*lidTextMargin` high to allow for ascenders/descenders,
 smaller than the lid width, and leave room for the artwork margins when
 artwork is enabled. Text depth must be positive and less than the active
@@ -421,12 +436,12 @@ OpenSCAD; the model cannot verify font availability in OpenSCAD 2021.01.
 
 **Text is not automatically fitted or wrapped.** Preview the complete label
 before export. Long labels can extend outside their reserved area or be
-cut off at the lid edge: reduce `lidTextSize` or shorten the label. For
-unusually tall fonts, also increase `lidTextBandHeight`. The console prints
-the requested font, size, and available area as a reminder; it is not an
-automatic font-metrics or overflow check. Prefer sufficiently bold lettering
-and check small details in the slicer. Disabled text does not reserve space
-or evaluate its text/font/size settings.
+cut off at the lid edge: reduce `lidTextSize`, shorten the label, or adjust
+its position. For unusually tall fonts, also increase `lidTextBandHeight`.
+The console prints the requested font, size, and position as a reminder; it
+is not an automatic font-metrics, overlap, or overflow check. Prefer
+sufficiently bold lettering and check small details in the slicer. Disabled
+text does not reserve space or evaluate its text/font/size/position settings.
 
 ### Fit and clearance
 

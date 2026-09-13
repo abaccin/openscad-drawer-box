@@ -127,8 +127,12 @@ lidTextSize=8;
 lidTextDepth=0.5;
 // Height of the reserved label band along Y; the robot is fitted into the remaining area.
 lidTextBandHeight=20;
-// Empty margin around the label band, including clearance from the sliding bevel.
+// Empty margin around the reserved label band, including clearance from the sliding bevel.
 lidTextMargin=4;
+// Label center along X from the lid's X=0 edge. undef centers it on the active lid.
+lidTextPositionX=undef;
+// Label center along Y from the lid's Y=0 edge. undef centers it on the active lid.
+lidTextPositionY=undef;
 
 /* [Fit and clearance] */
 // Minimum vertical gap under bases/rails/magnetic lip and below ledges; must be positive.
@@ -198,6 +202,10 @@ module lidTextChecks(l,w,h,et){
 			   "lidTextBandHeight must be positive and smaller than the lid width.");
 		assert(is_num(lidTextMargin) && lidTextMargin>=h-et+internalClearance,
 			   "lidTextMargin must clear the lid edge/bevel by internalClearance.");
+		assert(is_undef(lidTextPositionX) || is_num(lidTextPositionX),
+			   "lidTextPositionX must be a number or undef for centered text.");
+		assert(is_undef(lidTextPositionY) || is_num(lidTextPositionY),
+			   "lidTextPositionY must be a number or undef for centered text.");
 		assert(lidTextBandHeight>=1.5*lidTextSize+2*lidTextMargin,
 			   "lidTextBandHeight must be at least 1.5*lidTextSize + 2*lidTextMargin for font ascenders/descenders.");
 		assert(l>(withLidLogo ? lidLogoSize+2*lidLogoMargin : 0)+2*lidTextMargin,
@@ -209,17 +217,18 @@ module lidTextChecks(l,w,h,et){
 module lidDecorations(l,w,h,et,beveled=true){
 	lidTextChecks(l,w,h,et)
 	let(logoStrip=withLidLogo ? lidLogoSize+2*lidLogoMargin : 0,
-		textStrip=withLidText ? lidTextBandHeight : 0){
+		textStrip=withLidText ? lidTextBandHeight : 0,
+		textX=is_undef(lidTextPositionX) ? l/2 : lidTextPositionX,
+		textY=is_undef(lidTextPositionY) ? w/2 : lidTextPositionY){
 		if (withLidArtwork)
 			translate([logoStrip,0,0])
 			lidArtwork(l=l-logoStrip,w=w-textStrip,h=h);
 		if (withLidLogo) lidLogo(l=l,w=w,h=h,et=et,beveled=beveled);
 		if (withLidText){
 			echo(str("Text uses font '",lidTextFont,"' at size ",lidTextSize,
-					 ". Preview the full label within ",l-logoStrip-2*lidTextMargin,
-					 " x ",textStrip-2*lidTextMargin,
-					 " mm; long labels need a smaller size. Missing fonts may be substituted by OpenSCAD."));
-			translate([logoStrip+(l-logoStrip)/2,-w+textStrip/2,h-lidTextDepth])
+					 " centered at ",textX," x ",textY,
+					 " mm from the lid's X=0/Y=0 edges. Preview placement; text is not bounds-checked. Missing fonts may be substituted by OpenSCAD."));
+			translate([textX,-w+textY,h-lidTextDepth])
 			linear_extrude(height=lidTextDepth+0.01,convexity=10)
 			text(lidText,size=lidTextSize,font=lidTextFont,halign="center",valign="center");
 		}
