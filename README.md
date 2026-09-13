@@ -63,7 +63,16 @@ Text needs an installed font, not an SVG or an external OpenSCAD library.
    independently of artwork and logo. The robot moves into the area left
    after reserving the text band; adjust text size and position, then preview
    the full label.
-7. Export parts separately: select `itemsShown="box"`, press **F6** to
+7. Customize colors for preview and multi-color 3D printing under **Colors**.
+   Set `boxColor`, `lidColor`, `robotColor`, `logoColor`, and `textColor` to
+   any color name, hex code (`"#RRGGBB"`), or RGB vector (`[r, g, b]`).
+   Set `withColorInlay=true` to generate flush solid inlays in the lid cavities.
+   For multi-extruder or multi-material printing (e.g. Bambu AMS, Prusa MMU),
+   select `colorShown="box"`, `"lid"`, `"robot"`, `"logo"`, or `"text"` and
+   export each STL individually at identical world coordinates for single-click
+   multi-part alignment in your slicer.
+8. For ordinary single-material exports, set `colorShown="all"` and
+   `withColorInlay=false`. Select `itemsShown="box"`, press **F6** to
    render, then choose **File > Export > Export as STL**. For a matching
    lid, keep the same dimensions, `withLid=true`, and the same `lidStyle`, select
    `itemsShown="lid"`, render with **F6**, and export another STL.
@@ -443,6 +452,89 @@ is not an automatic font-metrics, overlap, or overflow check. Prefer
 sufficiently bold lettering and check small details in the slicer. Disabled
 text does not reserve space or evaluate its text/font/size/position settings.
 
+### Colors and multi-color printing
+
+Personalize visual colors in OpenSCAD and generate multi-part STLs for
+multi-material / multi-extrusion slicing (inspired by the Hackaday article
+*OpenSCAD In Living Color*).
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `boxColor` | `"SteelBlue"` | Box display color (name, hex `"#RRGGBB"`, or `[r, g, b]` vector). |
+| `lidColor` | `"LightSlateGray"` | Lid body display color. |
+| `robotColor` | `"Gold"` | Robot inlay display color. |
+| `logoColor` | `"White"` | Personal AB logo inlay display color. |
+| `textColor` | `"OrangeRed"` | Lid label inlay display color. |
+| `withColorInlay` | `false` | When `false`, decorations are recessed single-material engravings. When `true`, decorations generate flush solid inlays in lid cavities for multi-color printing. |
+| `colorShown` | `"all"` | Multi-material part filter: `"all"`, `"box"`, `"lid"`, `"robot"`, `"logo"`, or `"text"`. |
+
+Colors accept standard OpenSCAD color names (e.g. `"Tomato"`, `"SlateGray"`),
+hex color strings (e.g. `"#4A90E2"`), and RGB/RGBA numeric vectors
+(e.g. `[0.2, 0.6, 0.9]`); each vector component must be between 0 and 1.
+Use color strings in the Customizer; edit vectors in the source. Unknown
+color names are reported by OpenSCAD. Colors appear in **F5 preview**;
+F6/STL does not retain material colors.
+Inlay preview resolves the clipped solids to avoid coplanar color artifacts;
+the detailed robot can therefore take several minutes even in F5.
+
+`colorShown="all"` honors `itemsShown`. Any other value selects that
+component instead of `itemsShown`, without changing its position.
+Lid components still require `withLid=true`; inlays also require
+`withColorInlay=true` and their corresponding `withLidArtwork`,
+`withLidLogo`, or `withLidText` flag. Disabled selections produce no object
+and explain which flag to enable in the console.
+
+The original engraving depths set the inlay thicknesses. Inlays are clipped
+to the lid outline, bevels, and notch, keeping its external dimensions
+unchanged. Where decorations overlap, **text takes priority over logo,
+then robot**; their exported volumes do not overlap. Out-of-bounds text is
+clipped, not fitted. Check placement and layer thickness in your slicer.
+These are co-printed material regions, not loose press-fit inserts.
+
+For example, to preview all decorations in personalized colors:
+
+```scad
+withLid=true;
+withLidArtwork=true;
+withLidLogo=true;
+withLidText=true;
+withColorInlay=true;
+itemsShown="both";
+colorShown="all";
+boxColor="#204060";
+lidColor="SlateGray";
+robotColor="Gold";
+logoColor="White";
+textColor="OrangeRed";
+```
+
+#### Multi-color slicing workflow
+
+1. In OpenSCAD, set `withLid=true` and configure your dimensions, lid style,
+   enabled decorations, and text. Keep these settings identical for every export.
+2. Set `withColorInlay=true` so that the lid engravings become flush solid inlays.
+3. For multi-extruder or multi-material systems (for example, Bambu AMS or Prusa MMU):
+   - Set `colorShown="lid"`, press **F6**, and export `lid_body.stl`.
+   - If robot artwork is enabled, set `colorShown="robot"`, press **F6**, and export `lid_robot.stl`.
+   - If logo is enabled, set `colorShown="logo"`, press **F6**, and export `lid_logo.stl`.
+   - If text is enabled, set `colorShown="text"`, press **F6**, and export `lid_text.stl`.
+4. Import the exported STLs together into your slicer at once. When prompted to load files as a single multi-part object, select **Yes**. Each part aligns automatically at its true coordinate origin.
+5. Assign your desired filament colors to each sub-part in your slicer and print.
+
+Export `colorShown="box"` separately for the box. Identical display colors
+do not automatically combine components: assign the same filament to
+multiple parts when desired. Do not independently center, drop, or auto-arrange
+inlay STLs; transform the assembled lid as one object to preserve XYZ alignment.
+The magnetic lid remains exterior-face-down; look underneath it in F5 to see
+the inlay colors.
+
+This follows the separate-STL approach in
+[OpenSCAD In Living Color](https://hackaday.com/2025/10/14/openscad-in-living-color/).
+STL stores geometry, not filament colors. After assigning filaments, save a
+**3MF project from your slicer** to retain the assignments. Direct multi-part,
+colored 3MF export from OpenSCAD is version/feature-dependent and is not
+guaranteed by this model, including on OpenSCAD 2021.01.
+
 ### Fit and clearance
 
 | Parameter | Default | Meaning |
@@ -508,8 +600,8 @@ Start with the box floor on the build plate. Print sliding lids flat with
 the engraved face upward. Magnetic lids are displayed exterior-face-down,
 with pockets and the lip upward; see their engraving and assembly guidance
 above. Inspect both parts in your slicer before printing. Either lid is
-displayed at negative Y in OpenSCAD; center each exported part on the build
-plate as needed.
+displayed at negative Y in OpenSCAD; center each complete box or assembled
+lid on the build plate as needed, never its individual colored inlays.
 
 The sloped ledge and magnetic-pad undersides are intended to ease printing,
 but those features and the narrow overhang at the stacking shoulder may still need supports
@@ -552,6 +644,9 @@ configurations; inspect watertightness, connected parts and perimeter lips,
 pocket dimensions, and actual assembled clearance; and exercise invalid
 parameter assertions. Decoration checks cover all artwork/logo/text combinations
 on both lid styles, real robot artwork with logo and text, and selected fonts.
+Color checks cover enabled/disabled exports, valid and invalid colors,
+flush aligned inlays, and non-overlapping material partitions that reconstruct
+the original lid even with overlapping or out-of-bounds text.
 Magnetic coverage includes the default box, a 300 x 200 x 70 mm example,
 non-default magnets/fit, and a boolean interference check with dividers.
 Temporary render files are removed automatically.
