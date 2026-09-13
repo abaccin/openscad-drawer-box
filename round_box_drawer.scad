@@ -8,17 +8,33 @@
 // Choose the part to preview/export. A lid is only generated when withLid=true.
 itemsShown="both"; // [both,box,lid]
 
+/* [Colors] */
+// Main box preview color: name, hex string, or RGB/RGBA vector (components 0 to 1).
+boxColor="SteelBlue";
+// Lid body preview color. STL exports require filament assignment in the slicer.
+lidColor="LightSlateGray";
+// Robot relief artwork color.
+robotColor="Gold";
+// Personal logo color.
+logoColor="White";
+// Custom lid text color.
+textColor="OrangeRed";
+// Generate solid inlays in decoration cavities for multi-color 3D printing/preview.
+withColorInlay=false;
+// all uses itemsShown; a component overrides itemsShown but still requires its enable flags.
+colorShown="all"; // [all,box,lid,robot,logo,text]
+
 /* [Box] */
 // Outside length along X; must exceed twice wallThickness.
-boxLength=100;
+boxLength=160;
 // Outside width along Y; must exceed twice wallThickness.
-boxWidth=80;
+boxWidth=95;
 // Overall outside height, including the lid when enabled or the inset stacking base.
-boxHeight=30;
+boxHeight=50;
 // Outside corner radius; greater than wallThickness, at most half the shorter side.
 cornerRadius=5;
 // Side-wall thickness. Choose a value your printer can resolve.
-wallThickness=2.5;
+wallThickness=1;
 // Floor thickness; stacking raises the floor by stackingDepth without thinning it.
 bottomThickness=2;
 
@@ -26,19 +42,19 @@ bottomThickness=2;
 // Number of divider walls across X (length). 0 disables this direction; N makes N+1 columns.
 dividerCountX=0;
 // Number of divider walls across Y (width). 0 disables this direction; N makes N+1 rows.
-dividerCountY=5;
+dividerCountY=0;
 // Divider height measured UP from the interior floor, not the build plate.
-dividerHeight=15;
+dividerHeight=25;
 // Thickness shared by all divider walls; independent of the outer wall thickness.
 dividerThickness=1.2;
 // [] spaces X compartments equally. Otherwise enter dividerCountX clear lengths, e.g. [40,55] for 2 walls; the final compartment uses the remainder.
 compartmentSizesX=[];
 // [] spaces Y compartments equally. Otherwise enter dividerCountY clear widths from Y=0; the final compartment uses the remainder.
-compartmentSizesY=[20];
+compartmentSizesY=[];
 
 /* [Stacking] */
 // Enable a locating base for lidless boxes only; automatically ignored withLid=true.
-withStacking=false;
+withStacking=true;
 // Base height/insertion depth. Raises the floor and reduces the available divider height.
 stackingDepth=3;
 // Gap per side between the inset base and the lower box's inner wall.
@@ -46,9 +62,9 @@ stackingClearance=0.25;
 
 /* [Lid] */
 // Generate a matching box and separate lid; disables the stacking base.
-withLid=true;
+withLid=false;
 // Sliding preserves the original rails; magnetic lifts off vertically.
-lidStyle="magnetic"; // [sliding,magnetic]
+lidStyle="sliding"; // [sliding,magnetic]
 // Sliding lid thickness; must leave room above the floor and dividers for the rails.
 lidThickness=2;
 // Total reduction in sliding lid width (not per side). Increase for a looser fit.
@@ -60,7 +76,7 @@ withNotch=true;
 
 /* [Magnetic lid] */
 // Full plate thickness, excluding the inset lip. Requires room for pockets and engraving.
-magneticLidThickness=6;
+magneticLidThickness=5;
 // Round magnet diameter. Four pairs require eight magnets.
 magnetDiameter=3;
 // Round magnet thickness; magnets are glued into accessible pockets after printing.
@@ -78,7 +94,7 @@ magneticLidLipThickness=1.2;
 
 /* [Internal pull ledges] */
 // Short end walls: start is X=0, end is X=boxLength. Remove the lid before lifting.
-pullLedges="none"; // [none,start,end,both]
+pullLedges="both"; // [none,start,end,both]
 // Ledge width across Y; must fit between the rounded end-wall corners.
 pullWidth=30;
 // How far each ledge projects into the box. Leave finger space when sizing compartments.
@@ -90,7 +106,7 @@ pullTopOffset=8;
 
 /* [Lid artwork] */
 // Engrave the large robot artwork when a lid is generated; independent of the small logo.
-withLidArtwork=false;
+withLidArtwork=true;
 // SVG path relative to this SCAD file. Keep the supplied SVG beside the model.
 lidArtworkFile="robot-relief.svg";
 // Engraving depth; magnetic lids must also retain 1 mm of skin above the magnet pockets.
@@ -108,7 +124,7 @@ withLidLogo=true;
 // Personal SVG path relative to this SCAD file.
 lidLogoFile="ab-logo-monochrome.svg";
 // Width and height of the supplied square logo. Fine details may need a larger size.
-lidLogoSize=20;
+lidLogoSize=12;
 // Logo depth; magnetic lids must also retain 1 mm of skin above the magnet pockets.
 lidLogoDepth=0.5;
 // Space around the logo strip; must clear the sliding bevel or magnetic edge by internalClearance.
@@ -116,9 +132,9 @@ lidLogoMargin=4;
 
 /* [Custom lid text] */
 // Engrave a single-line label in its own band, with or without artwork and logo.
-withLidText=true;
+withLidText=false;
 // Your label. When enabled, this must contain visible characters and no line breaks.
-lidText="Hand Drill";
+lidText="My box";
 // Installed font family and optional style; copy a name from Help > Font List.
 lidTextFont="Liberation Sans:style=Bold";
 // OpenSCAD text size in mm. Long labels need a smaller size; text is not auto-fitted.
@@ -144,6 +160,14 @@ assert(is_bool(withLid),"withLid must be true or false.");
 assert(is_bool(withStacking),"withStacking must be true or false.");
 assert(is_bool(withLidLogo),"withLidLogo must be true or false.");
 assert(is_bool(withLidText),"withLidText must be true or false.");
+assert(is_bool(withColorInlay),"withColorInlay must be true or false.");
+for (setting=[["boxColor",boxColor],["lidColor",lidColor],["robotColor",robotColor],
+			 ["logoColor",logoColor],["textColor",textColor]])
+	assert(validColor(setting[1]),
+		   str(setting[0]," must be a nonempty color name/hex string or an RGB/RGBA vector with numeric components from 0 to 1."));
+assert(colorShown=="all" || colorShown=="box" || colorShown=="lid" ||
+	   colorShown=="robot" || colorShown=="logo" || colorShown=="text",
+	   "colorShown must be all, box, lid, robot, logo, or text.");
 assert(is_num(internalClearance) && internalClearance>0,
 	   "internalClearance must be positive.");
 assert(itemsShown=="both" || itemsShown=="box" || itemsShown=="lid",
@@ -151,17 +175,33 @@ assert(itemsShown=="both" || itemsShown=="box" || itemsShown=="lid",
 assert(lidStyle=="sliding" || lidStyle=="magnetic",
 	   "lidStyle must be sliding or magnetic.");
 
-if (withLid && lidStyle=="magnetic")
-	magneticChecks() {
-		if (itemsShown=="box" || itemsShown=="both") showBox();
-		if (itemsShown=="lid" || itemsShown=="both") showLid();
+function validColor(value)=
+	is_string(value) ? len(value)>0 :
+	is_list(value) ? (len(value)==3 || len(value)==4) &&
+		len([for (v=value) if (!is_num(v) || v<0 || v>1) 1])==0 : false;
+
+function decorationEnabled(part)=
+	part=="robot" ? withLidArtwork : part=="logo" ? withLidLogo : withLidText;
+
+if (withLid && lidStyle=="magnetic") magneticChecks() scene();
+else scene();
+
+module scene(){
+	if (colorShown=="box" || (colorShown=="all" && itemsShown!="lid")) showBox();
+	if (withLid && (colorShown!="box" && (colorShown!="all" || itemsShown!="box")))
+		showLid();
+	if (!withLid && (colorShown=="lid" || colorShown=="robot" ||
+					colorShown=="logo" || colorShown=="text" ||
+					(colorShown=="all" && itemsShown=="lid")))
+		echo("Lid disabled: set withLid=true, or select itemsShown=box or both.");
+	if (withLid && (colorShown=="robot" || colorShown=="logo" || colorShown=="text")){
+		if (!withColorInlay)
+			echo("Color inlays disabled: set withColorInlay=true to export decoration solids.");
+		else if (!decorationEnabled(colorShown))
+			echo(str("Decoration disabled: enable ",colorShown=="robot" ? "withLidArtwork" :
+					 colorShown=="logo" ? "withLidLogo" : "withLidText"," to export ",colorShown,"."));
 	}
-else {
-	if (itemsShown=="box" || itemsShown=="both") showBox();
-	if (withLid && (itemsShown=="lid" || itemsShown=="both")) showLid();
 }
-if (!withLid && itemsShown=="lid")
-	echo("Lid disabled: set withLid=true, or select itemsShown=box or both.");
 
 module showLid(){
 	if (lidStyle=="magnetic")
@@ -169,9 +209,10 @@ module showLid(){
 	else slidingLid();
 }
 
-module slidingLid(){
+module slidingLidBody(decorated=true){
 	l=boxLength-wallThickness;
 	w=boxWidth-2*wallThickness-lidClearance;
+	color(lidColor)
 	translate ([0, -2*wallThickness, 0])
 	difference(){
 		roundBoxLid(l=l,
@@ -180,9 +221,47 @@ module slidingLid(){
 					et=lidEdgeThickness,
 					r=cornerRadius-wallThickness,
 					notch=withNotch);
-		lidDecorations(l=l,w=w,h=lidThickness,et=lidEdgeThickness);
+		if (decorated) lidDecorations(l=l,w=w,h=lidThickness,et=lidEdgeThickness);
 	}
 }
+
+module slidingLid(){
+	if (colorShown=="all" || colorShown=="lid") slidingLidBody();
+	lidInlays();
+}
+
+module decorationInPrint(part,magnetic=false){
+	if (magnetic)
+		translate([0,0,magneticLidThickness])
+		rotate([180,0,0])
+		lidDecorations(boxLength,boxWidth,magneticLidThickness,magneticLidThickness,
+					   beveled=false,part=part);
+	else
+		translate([0,-2*wallThickness,0])
+		lidDecorations(boxLength-wallThickness,boxWidth-2*wallThickness-lidClearance,
+					   lidThickness,lidEdgeThickness,part=part);
+}
+
+module lidInlays(magnetic=false,selected=colorShown){
+	parts=["robot","logo","text"];
+	if (withColorInlay)
+		for (i=[0:2])
+			if (decorationEnabled(parts[i]) && (selected=="all" || selected==parts[i]))
+				color(i==0 ? robotColor : i==1 ? logoColor : textColor)
+				// Resolve coplanar clipping faces so F5 colors only the actual inlay.
+				render(convexity=10)
+				intersection(){
+					// Clip cutters to the actual lid, including bevels and the thumb notch.
+					if (magnetic) magneticLidBody(decorated=false);
+					else slidingLidBody(decorated=false);
+					difference(){
+						decorationInPrint(parts[i],magnetic);
+						// Higher-priority material owns intersections: text > logo > robot.
+						for (j=[0:2])
+							if (j>i) decorationInPrint(parts[j],magnetic);
+}
+				}
+	}
 
 module lidTextChecks(l,w,h,et){
 	if (withLidText){
@@ -214,28 +293,28 @@ module lidTextChecks(l,w,h,et){
 	children();
 }
 
-module lidDecorations(l,w,h,et,beveled=true){
+module lidDecorations(l,w,h,et,beveled=true,cutter=true,part="all"){
 	lidTextChecks(l,w,h,et)
 	let(logoStrip=withLidLogo ? lidLogoSize+2*lidLogoMargin : 0,
 		textStrip=withLidText ? lidTextBandHeight : 0,
 		textX=is_undef(lidTextPositionX) ? l/2 : lidTextPositionX,
 		textY=is_undef(lidTextPositionY) ? w/2 : lidTextPositionY){
-		if (withLidArtwork)
+		if (withLidArtwork && (part=="all" || part=="robot"))
 			translate([logoStrip,0,0])
-			lidArtwork(l=l-logoStrip,w=w-textStrip,h=h);
-		if (withLidLogo) lidLogo(l=l,w=w,h=h,et=et,beveled=beveled);
-		if (withLidText){
-			echo(str("Text uses font '",lidTextFont,"' at size ",lidTextSize,
-					 " centered at ",textX," x ",textY,
-					 " mm from the lid's X=0/Y=0 edges. Preview placement; text is not bounds-checked. Missing fonts may be substituted by OpenSCAD."));
-			translate([textX,-w+textY,h-lidTextDepth])
-			linear_extrude(height=lidTextDepth+0.01,convexity=10)
-			text(lidText,size=lidTextSize,font=lidTextFont,halign="center",valign="center");
+			lidArtwork(l=l-logoStrip,w=w-textStrip,h=h,cutter=cutter);
+		if (withLidLogo && (part=="all" || part=="logo"))
+			lidLogo(l=l,w=w,h=h,et=et,beveled=beveled,cutter=cutter);
+		if (withLidText && (part=="all" || part=="text")){
+			if (cutter)
+				echo(str("Text uses font '",lidTextFont,"' at size ",lidTextSize,
+						 " centered at ",textX," x ",textY,
+						 " mm from the lid's X=0/Y=0 edges. Preview placement; text is not bounds-checked. Missing fonts may be substituted by OpenSCAD."));
+			lidTextGeometry(l=l,w=w,h=h,textX=textX,textY=textY,cutter=cutter);
 		}
 	}
 }
 
-module lidArtwork(l,w,h){
+module lidArtwork(l,w,h,cutter=true){
 	padding=lidArtworkMargin+lidArtworkLineGrowth;
 	artworkLength=min(l-2*padding,(w-2*padding)*lidArtworkAspect);
 	assert(lidArtworkAspect>0,"Lid artwork aspect ratio must be positive.");
@@ -245,16 +324,16 @@ module lidArtwork(l,w,h){
 	assert(lidArtworkLineGrowth>=0,"Lid artwork line growth cannot be negative.");
 	assert(l>2*padding && w>2*padding,"The lid is too small for the artwork margins.");
 
-	// The lid occupies negative Y. Extend the engraving cutter above its top.
+	extrudeHeight=cutter ? lidArtworkDepth+0.01 : lidArtworkDepth;
 	translate([l/2,-w/2,h-lidArtworkDepth])
-	linear_extrude(height=lidArtworkDepth+0.01,convexity=10)
+	linear_extrude(height=extrudeHeight,convexity=10)
 	offset(delta=lidArtworkLineGrowth)
 	resize([artworkLength,0],auto=true)
 	rotate([0,0,90])
 	import(file=lidArtworkFile,center=true);
 }
 
-module lidLogo(l,w,h,et,beveled=true){
+module lidLogo(l,w,h,et,beveled=true,cutter=true){
 	assert(lidLogoSize>0,"Lid logo size must be positive.");
 	assert(lidLogoDepth>0 && lidLogoDepth<h,
 		   "Lid logo depth must be positive and less than the lid thickness.");
@@ -264,15 +343,25 @@ module lidLogo(l,w,h,et,beveled=true){
 	assert(lidLogoSize+2*lidLogoMargin<min(l,w),
 		   "The lid is too small for the logo and its margins.");
 
+	extrudeHeight=cutter ? lidLogoDepth+0.01 : lidLogoDepth;
 	translate([lidLogoMargin+lidLogoSize/2,-w/2,h-lidLogoDepth])
-	linear_extrude(height=lidLogoDepth+0.01,convexity=10)
+	linear_extrude(height=extrudeHeight,convexity=10)
 	resize([lidLogoSize,lidLogoSize])
 	import(file=lidLogoFile,center=true);
 }
 
+module lidTextGeometry(l,w,h,textX,textY,cutter=true){
+	extrudeHeight=cutter ? lidTextDepth+0.01 : lidTextDepth;
+	translate([textX,-w+textY,h-lidTextDepth])
+	linear_extrude(height=extrudeHeight,convexity=10)
+	text(lidText,size=lidTextSize,font=lidTextFont,halign="center",valign="center");
+}
+
 module showBox(){
-	if (withLid && lidStyle=="magnetic") magneticBox();
-	else configuredBox();
+	color(boxColor) {
+		if (withLid && lidStyle=="magnetic") magneticBox();
+		else configuredBox();
+	}
 }
 
 module configuredBox(height=boxHeight,ledgeOffset=pullTopOffset,
@@ -421,7 +510,7 @@ module magneticBox(){
 	}
 }
 
-module magneticLid(){
+module magneticLidBody(decorated=true){
 	assert(!withLidArtwork || (is_num(lidArtworkDepth) && lidArtworkDepth>0),
 		   "Lid artwork depth must be positive and numeric.");
 	assert(!withLidLogo || (is_num(lidLogoDepth) && lidLogoDepth>0),
@@ -434,6 +523,7 @@ module magneticLid(){
 			   "Magnetic lid engraving must leave at least 1 mm of skin above the magnet pockets; increase magneticLidThickness or reduce engraving depth.");
 		assert(!withNotch || t>=1.5+engraving+1,
 			   "Magnetic finger recess must leave at least 1 mm of skin below the engraving.");
+		color(lidColor)
 		difference(){
 			union(){
 				round_cube(l=boxLength,w=boxWidth,h=t,r=cornerRadius,$fn=64);
@@ -445,11 +535,15 @@ module magneticLid(){
 			if (withNotch)
 				translate([0,0,t-1.5]) magneticFingerRecess(height=1.51);
 			// Print exterior-face-down: pockets/lip face up and engraving cuts into Z=0.
-			translate([0,0,t])
-			rotate([180,0,0])
-			lidDecorations(l=boxLength,w=boxWidth,h=t,et=t,beveled=false);
+			if (decorated)
+				for (part=["robot","logo","text"]) decorationInPrint(part,magnetic=true);
 		}
 	}
+}
+
+module magneticLid(){
+	if (colorShown=="all" || colorShown=="lid") magneticLidBody();
+	lidInlays(magnetic=true);
 }
 
 module round_box(l=40,w=30,h=30,bt=2,wt=2,lt=2,r=5,et=0.5,
