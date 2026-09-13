@@ -10,15 +10,15 @@ itemsShown="both"; // [both,box,lid]
 
 /* [Box] */
 // Outside length along X; must exceed twice wallThickness.
-boxLength=160;
+boxLength=100;
 // Outside width along Y; must exceed twice wallThickness.
-boxWidth=95;
+boxWidth=80;
 // Overall outside height, including the lid when enabled or the inset stacking base.
-boxHeight=50;
+boxHeight=30;
 // Outside corner radius; greater than wallThickness, at most half the shorter side.
 cornerRadius=5;
 // Side-wall thickness. Choose a value your printer can resolve.
-wallThickness=1;
+wallThickness=2.5;
 // Floor thickness; stacking raises the floor by stackingDepth without thinning it.
 bottomThickness=2;
 
@@ -26,19 +26,19 @@ bottomThickness=2;
 // Number of divider walls across X (length). 0 disables this direction; N makes N+1 columns.
 dividerCountX=0;
 // Number of divider walls across Y (width). 0 disables this direction; N makes N+1 rows.
-dividerCountY=0;
+dividerCountY=5;
 // Divider height measured UP from the interior floor, not the build plate.
-dividerHeight=25;
+dividerHeight=15;
 // Thickness shared by all divider walls; independent of the outer wall thickness.
 dividerThickness=1.2;
-// Enter up to dividerCountX leading clear lengths from X=0; remaining compartments share the leftover space equally. [] spaces all equally.
+// [] spaces X compartments equally. Otherwise enter dividerCountX clear lengths, e.g. [40,55] for 2 walls; the final compartment uses the remainder.
 compartmentSizesX=[];
-// Enter up to dividerCountY leading clear widths from Y=0; remaining compartments share the leftover space equally. [] spaces all equally.
-compartmentSizesY=[];
+// [] spaces Y compartments equally. Otherwise enter dividerCountY clear widths from Y=0; the final compartment uses the remainder.
+compartmentSizesY=[20];
 
 /* [Stacking] */
 // Enable a locating base for lidless boxes only; automatically ignored withLid=true.
-withStacking=true;
+withStacking=false;
 // Base height/insertion depth. Raises the floor and reduces the available divider height.
 stackingDepth=3;
 // Gap per side between the inset base and the lower box's inner wall.
@@ -46,9 +46,9 @@ stackingClearance=0.25;
 
 /* [Lid] */
 // Generate a matching box and separate lid; disables the stacking base.
-withLid=false;
+withLid=true;
 // Sliding preserves the original rails; magnetic lifts off vertically.
-lidStyle="sliding"; // [sliding,magnetic]
+lidStyle="magnetic"; // [sliding,magnetic]
 // Sliding lid thickness; must leave room above the floor and dividers for the rails.
 lidThickness=2;
 // Total reduction in sliding lid width (not per side). Increase for a looser fit.
@@ -60,7 +60,7 @@ withNotch=true;
 
 /* [Magnetic lid] */
 // Full plate thickness, excluding the inset lip. Requires room for pockets and engraving.
-magneticLidThickness=5;
+magneticLidThickness=6;
 // Round magnet diameter. Four pairs require eight magnets.
 magnetDiameter=3;
 // Round magnet thickness; magnets are glued into accessible pockets after printing.
@@ -78,7 +78,7 @@ magneticLidLipThickness=1.2;
 
 /* [Internal pull ledges] */
 // Short end walls: start is X=0, end is X=boxLength. Remove the lid before lifting.
-pullLedges="both"; // [none,start,end,both]
+pullLedges="none"; // [none,start,end,both]
 // Ledge width across Y; must fit between the rounded end-wall corners.
 pullWidth=30;
 // How far each ledge projects into the box. Leave finger space when sizing compartments.
@@ -90,7 +90,7 @@ pullTopOffset=8;
 
 /* [Lid artwork] */
 // Engrave the large robot artwork when a lid is generated; independent of the small logo.
-withLidArtwork=true;
+withLidArtwork=false;
 // SVG path relative to this SCAD file. Keep the supplied SVG beside the model.
 lidArtworkFile="robot-relief.svg";
 // Engraving depth; magnetic lids must also retain 1 mm of skin above the magnet pockets.
@@ -108,7 +108,7 @@ withLidLogo=true;
 // Personal SVG path relative to this SCAD file.
 lidLogoFile="ab-logo-monochrome.svg";
 // Width and height of the supplied square logo. Fine details may need a larger size.
-lidLogoSize=12;
+lidLogoSize=20;
 // Logo depth; magnetic lids must also retain 1 mm of skin above the magnet pockets.
 lidLogoDepth=0.5;
 // Space around the logo strip; must clear the sliding bevel or magnetic edge by internalClearance.
@@ -116,9 +116,9 @@ lidLogoMargin=4;
 
 /* [Custom lid text] */
 // Engrave a single-line label in its own band, with or without artwork and logo.
-withLidText=false;
+withLidText=true;
 // Your label. When enabled, this must contain visible characters and no line breaks.
-lidText="My box";
+lidText="Hand Drill";
 // Installed font family and optional style; copy a name from Help > Font List.
 lidTextFont="Liberation Sans:style=Bold";
 // OpenSCAD text size in mm. Long labels need a smaller size; text is not auto-fitted.
