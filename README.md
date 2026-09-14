@@ -24,6 +24,8 @@ Divisions are off by default, preserving the open interior. Set
 | `robot-relief.svg` | Robot linework imported for the engraved lid. Keep it next to the SCAD file. |
 | `ab-logo-monochrome.svg` | Personal AB logo imported for the small lid engraving. Keep it next to the SCAD file. |
 | `README.md` | Parameters, usage, and printing guidance. |
+| `scripts/export-lid-stls.mjs` | Automated aligned STL export of the lid body and enabled color inlays. |
+| `tests/export-lid-stls.test.mjs` | Exporter CLI, failure handling, and real OpenSCAD alignment checks. |
 | `tests/model.test.mjs` | OpenSCAD rendering, geometry, and parameter regression checks using Node.js. |
 
 No external OpenSCAD libraries are required. Each SVG is only needed when
@@ -541,6 +543,72 @@ STL stores geometry, not filament colors. After assigning filaments, save a
 colored 3MF export from OpenSCAD is version/feature-dependent and is not
 guaranteed by this model, including on OpenSCAD 2021.01.
 
+#### Automated lid STL export
+
+With **Node.js 18+** and **OpenSCAD 2021.01+** installed, save your model
+settings in `round_box_drawer.scad`, then run from the repository:
+
+```powershell
+$env:OPENSCAD='C:\Program Files\OpenSCAD\openscad.exe'
+node scripts\export-lid-stls.mjs
+```
+
+Omit `OPENSCAD` if `openscad` is on PATH. No npm install is needed.
+The default output directory is `exports\lid-stls` under the repository
+(ignored by Git). You can invoke the script by its full path from another
+directory; it always uses the model beside the repository's `scripts` folder.
+
+The script automatically sets `withLid=true` and `withColorInlay=true`,
+exports only the lid body and enabled decorations, and leaves the SCAD file
+unchanged. It evaluates the saved settings with OpenSCAD, so expressions
+and overrides determine which decorations are enabled. It preserves all
+part coordinates, including the magnetic lid's exterior-face-down orientation.
+
+| Output | When generated |
+| --- | --- |
+| `lid_body.stl` | Always. |
+| `lid_robot.stl` | `withLidArtwork=true`. |
+| `lid_logo.stl` | `withLidLogo=true`. |
+| `lid_text.stl` | `withLidText=true`. |
+
+Use `--output-dir` for a different destination and repeat `-D` to override
+individual settings. Relative destinations are resolved from your current
+directory. For example, in PowerShell 7.3+ with standard native argument passing:
+
+```powershell
+node scripts\export-lid-stls.mjs --output-dir 'exports\tool-bits' `
+  -D 'withLidArtwork=false' -D 'withLidLogo=true' `
+  -D 'withLidText=true' -D 'lidText="Tool bits"' -D 'lidTextSize=6'
+```
+
+`-D` values are OpenSCAD expressions: strings need the inner double quotes,
+booleans use `true`/`false`, and lists use e.g. `-D 'compartmentSizesY=[]'`.
+On Windows PowerShell 5.1 or legacy native argument passing, escape inner
+double quotes for the native command, e.g. `-D 'lidText=\"Tool bits\"'`,
+or edit the saved SCAD settings instead.
+`withLid`, `withColorInlay`, `itemsShown`, and `colorShown` are controlled by
+the exporter and cannot be passed as `-D` overrides. Use `--help` for usage.
+
+Unsaved OpenSCAD/Customizer edits are not read. Put desired values in the
+saved SCAD source or pass them with `-D`; Customizer JSON presets are not
+supported. Other saved settings, including lid style, dimensions, engraving
+depths, font, and enabled-decoration flags, remain in effect.
+
+The destination must be **new or empty**. Use a different directory for
+each export, or move your previous results before rerunning. Rendering is
+staged and the complete set is published only after every selected STL has
+nonempty, finite geometry. Disabled decorations are reported and skipped;
+an enabled decoration that is fully clipped or covered by another material
+is an error. Missing tools, OpenSCAD warnings/errors, and render failures
+stop the export with diagnostics and a nonzero exit code, without publishing
+a partial set. Each OpenSCAD invocation has a ten-minute timeout.
+
+Import **all STLs from the output directory together as one multi-part
+object**, then assign a filament to each part in your slicer. Do not center,
+drop to the bed, or auto-arrange individual inlays; transform the assembled
+lid as a whole. This script does not export the box, automate the slicer,
+assign filaments, or generate a 3MF. STL contains geometry only.
+
 ### Fit and clearance
 
 | Parameter | Default | Meaning |
@@ -643,7 +711,19 @@ node --test tests\model.test.mjs
 ```
 
 On systems where `openscad` is on PATH, `OPENSCAD` can be omitted.
-Checks verify exact divider positions and clear sizes for empty, partial, and
+To check the automated STL exporter separately, with the same prerequisites:
+
+```powershell
+node --test tests\export-lid-stls.test.mjs
+```
+
+Exporter checks cover arguments, enabled parts, output protection, error
+handling, and cleanup. Real OpenSCAD exports for both lid styles are compared
+against direct component exports at their original vertex coordinates,
+including SVG and text inlays. These use an explicit valid configuration
+and a simple robot-artwork fixture to keep rendering focused.
+
+Model checks verify exact divider positions and clear sizes for empty, partial, and
 full size lists on both axes. They also render STL meshes for grid (including
 partially specified X/Y grids), height, sliding/magnetic lid, and decoration
 configurations; inspect watertightness, connected parts and perimeter lips,
