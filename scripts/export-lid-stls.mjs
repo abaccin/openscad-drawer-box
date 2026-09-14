@@ -125,6 +125,9 @@ export function exportLidParts(options, {
   checkOutputDirectory(outputDir);
   const source = join(modelRoot, 'round_box_drawer.scad');
   if (!existsSync(source)) throw new Error(`Model not found: ${source}`);
+  const selectedParts = options.includeBox ? [['box', 'box.stl'], ...parts] : parts;
+  const colorSettings = options.includeBox
+    ? 'boxColor,lidColor,robotColor,logoColor,textColor' : 'lidColor,robotColor,logoColor,textColor';
   const windowsInstall = join(process.env.ProgramFiles || 'C:\\Program Files', 'OpenSCAD', 'openscad.exe');
   const configured = process.env.OPENSCAD
     || (process.platform === 'win32' && existsSync(windowsInstall) ? windowsInstall : 'openscad');
@@ -170,7 +173,7 @@ export function exportLidParts(options, {
     const metadata = join(temporary, 'settings.echo');
     const palette = join(temporary, 'palette.csg');
     const probes = options.includeColors
-      ? '\nfor (c=[lidColor,robotColor,logoColor,textColor]) color(c) cube(1);\n' : '';
+      ? `\nfor (c=[${colorSettings}]) color(c) cube(1);\n` : '';
     writeFileSync(wrapper, `include <round_box_drawer.scad>\necho("${marker}", [withLidArtwork, withLidLogo, withLidText]);\n${probes}`);
     log('Evaluating saved lid settings...');
     invoke(['-o', metadata, ...common, '-D', 'colorShown="lid"', wrapper], 'Settings evaluation', metadata);
@@ -179,19 +182,19 @@ export function exportLidParts(options, {
     const match = records.length === 1
       && records[0].match(/^ECHO:\s*"__DRAWER_LID_EXPORT_FLAGS__",\s*\[(true|false),\s*(true|false),\s*(true|false)\]\s*$/);
     if (!match) throw new Error('OpenSCAD did not report valid boolean decoration settings.');
-    const enabled = [true, ...match.slice(1).map(value => value === 'true')];
+    const enabled = [...(options.includeBox ? [true] : []), true, ...match.slice(1).map(value => value === 'true')];
     let colors;
     if (options.includeColors) {
       // OpenSCAD 2021.01 can crash when .echo and .csg share an invocation.
       invoke(['-o', palette, ...common, '-D', 'colorShown="lid"', wrapper], 'Color evaluation');
       if (!existsSync(palette)) throw new Error('OpenSCAD did not produce the color palette.');
-      // The final four color nodes are our probes. OpenSCAD resolves named, hex,
+      // The final color nodes are our probes. OpenSCAD resolves named, hex,
       // and vector colors here using the same rules as its model preview.
-      const values = [...readFileSync(palette, 'utf8').matchAll(/color\(\[([^\]]+)\]\)/g)].slice(-4);
+      const values = [...readFileSync(palette, 'utf8').matchAll(/color\(\[([^\]]+)\]\)/g)].slice(-selectedParts.length);
       const rgba = values.map(value => value[1].split(',').map(component => Number(component.trim())));
-      if (rgba.length !== 4 || !rgba.every(color =>
+      if (rgba.length !== selectedParts.length || !rgba.every(color =>
         color.length === 4 && color.every(value => Number.isFinite(value) && value >= 0 && value <= 1))) {
-        throw new Error('OpenSCAD did not report four valid RGBA colors.');
+        throw new Error(`OpenSCAD did not report ${selectedParts.length} valid RGBA colors.`);
       }
       colors = rgba.map(color => '#' + color.slice(0, 3).map(value =>
         Math.round(value * 255).toString(16).padStart(2, '0')).join('').toUpperCase());
@@ -200,7 +203,7 @@ export function exportLidParts(options, {
       }
     }
     const filenames = [];
-    for (const [index, [part, filename]] of parts.entries()) {
+    for (const [index, [part, filename]] of selectedParts.entries()) {
       if (!enabled[index]) {
         log(`Skipping ${part}: decoration disabled.`);
         continue;

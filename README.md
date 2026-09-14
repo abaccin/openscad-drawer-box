@@ -24,7 +24,8 @@ Divisions are off by default, preserving the open interior. Set
 | `robot-relief.svg` | Robot linework imported for the engraved lid. Keep it next to the SCAD file. |
 | `ab-logo-monochrome.svg` | Personal AB logo imported for the small lid engraving. Keep it next to the SCAD file. |
 | `README.md` | Parameters, usage, and printing guidance. |
-| `scripts/export-lid-3mf.mjs` | One-command Bambu Studio project export with aligned parts and assigned colors. |
+| `scripts/export-3mf.mjs` | One-command Bambu Studio project with the box and decorated lid on separate plates. |
+| `scripts/export-lid-3mf.mjs` | Backward-compatible command for the same full box-and-lid project exporter. |
 | `scripts/export-lid-stls.mjs` | Automated aligned STL export of the lid body and enabled color inlays. |
 | `tests/export-lid-3mf.test.mjs` | Project packaging, palette assignments, and Bambu Studio compatibility checks. |
 | `tests/export-lid-stls.test.mjs` | Exporter CLI, failure handling, and real OpenSCAD alignment checks. |
@@ -553,32 +554,39 @@ guaranteed by this model, including on OpenSCAD 2021.01.
 Save your settings in `round_box_drawer.scad`, then run:
 
 ```powershell
-node scripts\export-lid-3mf.mjs
+node scripts\export-3mf.mjs
 ```
 
-**Open `exports\lid.3mf` in Bambu Studio as a project.** The lid body and
-enabled logo, text, and robot inlays are already assembled, aligned, and
-assigned filament colors. There is no manual STL importing or part assembly.
-The exporter uses `lidColor`, `logoColor`, `textColor`, and `robotColor`
-from the saved model. Matching colors share one filament slot.
+**Open `exports\drawer-box.3mf` in Bambu Studio as a project.**
+**Plate 1 contains the box; plate 2 contains the decorated lid.** The lid body
+and enabled logo, text, and robot inlays are already assembled and aligned.
+There is no manual STL importing or part assembly.
+The box uses `boxColor`; the lid uses `lidColor`, `logoColor`, `textColor`,
+and `robotColor` from the saved model. Matching colors share one filament
+slot across both plates. Box dimensions, dividers, ledges, and the matching
+lid interface are generated from the same settings as the lid.
 
 Requires Node.js 18+ and OpenSCAD 2021.01+; no npm install or Bambu Studio
 installation is needed to generate the file. The standard Windows OpenSCAD
 installation is detected automatically. For other installations, put
 `openscad` on PATH or set `OPENSCAD` to its executable.
 
-To regenerate an existing project, run `node scripts\export-lid-3mf.mjs --force`.
-Use `--output 'exports\my-lid.3mf'` for another filename. The same optional
+To regenerate an existing project, run `node scripts\export-3mf.mjs --force`.
+Use `--output 'exports\my-box.3mf'` for another filename. The same optional
 `-D` overrides as the STL exporter are supported. The SCAD source is not
 modified, temporary STLs are cleaned up, and an existing project is only
 replaced after the new export succeeds.
+The previous `scripts\export-lid-3mf.mjs` command still works, but now also
+exports the complete project to `exports\drawer-box.3mf`. Previously generated
+lid-only files are not changed. The separate STL exporter remains lid-only.
 
 The project records filament **colors**, not which physical spool is loaded.
-It uses generic PLA and a 0.4 mm nozzle as placeholders, not a tuned printer
-profile. Choose your actual printer and filament material in Bambu Studio and
+It uses generic PLA, a 0.4 mm nozzle, and a generic bed sized to fit the
+objects as placeholders, not a tuned printer profile.
+Choose your actual printer and filament material in Bambu Studio and
 confirm AMS mapping before printing. Preview transparency is ignored for
-filament colors. This exports the lid and its enabled inlays, not the box;
-it does not generate sliced G-code.
+filament colors. Both objects rest on their own plate at Z=0; the magnetic
+lid stays decorated-face-down. The exporter does not generate sliced G-code.
 
 #### Automated lid STL export
 
@@ -759,11 +767,14 @@ handling, and cleanup. Real OpenSCAD exports for both lid styles are compared
 against direct component exports at their original vertex coordinates,
 including SVG and text inlays. These use an explicit valid configuration
 and a simple robot-artwork fixture to keep rendering focused.
-3MF checks verify archive structure, named parts, palette/extruder assignments,
-and preservation of triangle coordinates. When Bambu Studio is installed in
+3MF checks verify archive structure, separate box/lid plates, named parts,
+shared palette/extruder assignments, and preservation of triangle coordinates.
+The embedded box is compared with a direct OpenSCAD box export.
+When Bambu Studio is installed in
 its standard Windows location, the suite also imports and saves a real project
-with Bambu Studio and checks that colors, assignments, and relative part
-positions survive. Elsewhere, set `BAMBU_STUDIO` to the full executable path;
+with Bambu Studio for both lid styles and checks that both plate memberships,
+colors, assignments, and relative part positions survive. Elsewhere, set
+`BAMBU_STUDIO` to the full executable path;
 that compatibility check is explicitly skipped when Bambu Studio is unavailable.
 Project round-trip compatibility was checked with Bambu Studio 2.8.2.
 
