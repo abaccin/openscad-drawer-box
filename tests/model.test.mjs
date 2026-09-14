@@ -15,10 +15,18 @@ const temporary = mkdtempSync(join(tmpdir(), 'drawer-box-test-'));
 let sequence = 0;
 after(() => rmSync(temporary, { recursive: true, force: true }));
 
-function run(settings, extension = 'stl', body) {
+function run(settings, extension = 'stl', body, { previewFirst = false } = {}) {
   const output = join(temporary, `${sequence++}.${extension}`);
-  const args = ['-o', output];
-  if (extension === 'stl') args.push('--export-format', 'asciistl');
+  const args = [];
+  const preview = `${output}.png`;
+  if (previewFirst) {
+    assert.equal(extension, 'stl');
+    // Both exports must share a process to exercise the F5 render() cache in F6.
+    args.push('-o', preview, '--imgsize=128,128', '--viewall', '--autocenter');
+  }
+  args.push('-o', output);
+  // --export-format applies to every output, so it would turn the PNG into an STL.
+  if (extension === 'stl' && !previewFirst) args.push('--export-format', 'asciistl');
   for (const [name, value] of Object.entries(settings)) {
     args.push('-D', `${name}=${JSON.stringify(value)}`);
   }
@@ -33,6 +41,11 @@ function run(settings, extension = 'stl', body) {
     env: { ...process.env, OPENSCADPATH: [root, process.env.OPENSCADPATH].filter(Boolean).join(delimiter) },
   });
   assert.ifError(result.error);
+  if (previewFirst) {
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.deepEqual([...readFileSync(preview).subarray(0, 8)],
+      [137, 80, 78, 71, 13, 10, 26, 10], 'The first export must produce an F5 preview PNG');
+  }
   return { ...result, output, log: result.stdout + result.stderr };
 }
 
@@ -44,13 +57,24 @@ const cross = (a, b) => [
   a[0] * b[1] - a[1] * b[0],
 ];
 
-function render(settings = {}, expectedShells = 1, body) {
-  const result = run({ itemsShown: 'box', ...settings }, 'stl', body);
+function render(settings = {}, expectedShells = 1, body, options) {
+  const result = run({ itemsShown: 'box', ...settings }, 'stl', body, options);
   assert.equal(result.status, 0, result.log);
   assert.doesNotMatch(result.log, /ERROR:|WARNING:|not a valid 2-manifold/i);
-  const vertices = [...readFileSync(result.output, 'utf8').matchAll(
-    /vertex\s+([-\d.e+]+)\s+([-\d.e+]+)\s+([-\d.e+]+)/gi,
-  )].map(match => match.slice(1).map(Number));
+  const data = readFileSync(result.output);
+  let vertices = [];
+  // Mixed PNG/STL exports use the version's default STL format.
+  if (data.length >= 84 && data.length === 84 + 50 * data.readUInt32LE(80)) {
+    for (let offset = 84; offset < data.length; offset += 50) {
+      for (let vertex = 0; vertex < 3; vertex++) {
+        vertices.push([0, 1, 2].map(axis => data.readFloatLE(offset + 12 + vertex * 12 + axis * 4)));
+      }
+    }
+  } else {
+    vertices = [...data.toString('utf8').matchAll(
+      /vertex\s+([-\d.e+]+)\s+([-\d.e+]+)\s+([-\d.e+]+)/gi,
+    )].map(match => match.slice(1).map(Number));
+  }
   assert.ok(vertices.length > 0, 'Render must contain geometry');
   assert.equal(vertices.length % 3, 0);
   const triangles = [];
@@ -113,6 +137,18 @@ function render(settings = {}, expectedShells = 1, body) {
 
 function near(actual, expected, tolerance = 0.03) {
   assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} must be near ${expected}`);
+}
+
+function assertEmpty(result, context) {
+  assert.doesNotMatch(result.log, /ERROR:/, context);
+  if (!/Current top level object is empty/.test(result.log)) {
+    const stl = readFileSync(result.output, 'utf8');
+    // CGAL may retain isolated contact vertices, but no printable facets.
+    assert.doesNotMatch(stl, /facet normal/, `${context}: ${stl.slice(0, 1600)}`);
+    assert.match(result.log, /Facets:\s+0/);
+  } else {
+    assert.doesNotMatch(result.log, /WARNING:/, context);
+  }
 }
 
 test('default box remains undivided with the original floor, base, and ledges', () => {
@@ -720,6 +756,76 @@ test('invalid lid text settings fail explicitly without geometry warnings', () =
   }
 });
 
+const suppliedInlaySettings = {
+  itemsShown: 'both', colorShown: 'all', withColorInlay: true,
+  boxLength: 100, boxWidth: 95, boxHeight: 50, cornerRadius: 5,
+  wallThickness: 2.5, bottomThickness: 2,
+  dividerCountX: 0, dividerCountY: 5, dividerHeight: 25, dividerThickness: 1.2,
+  compartmentSizesX: [], compartmentSizesY: [18],
+  withStacking: false, withLid: true, lidStyle: 'magnetic',
+  lidThickness: 2, lidClearance: 0.2, lidEdgeThickness: 0.5, withNotch: true,
+  magneticLidThickness: 5, magnetDiameter: 3, magnetThickness: 3,
+  magnetPocketClearance: 0.1, magnetRecess: 0.1, magneticLidClearance: 0.3,
+  magneticLidLocatorDepth: 2, magneticLidLipThickness: 1.2, pullLedges: 'none',
+  withLidArtwork: false, withLidLogo: true, lidLogoFile: join(root, 'ab-logo-monochrome.svg'),
+  lidLogoSize: 25, lidLogoDepth: 0.5, lidLogoMargin: 4,
+  withLidText: true, lidText: '         Manual Drill',
+  lidTextFont: 'Liberation Sans:style=Bold', lidTextSize: 8, lidTextDepth: 0.5,
+  lidTextBandHeight: 20, lidTextMargin: 4,
+  internalClearance: 0.5,
+};
+
+for (const lidStyle of ['sliding', 'magnetic']) {
+  test(`${lidStyle} supplied color inlays remain manifold after F5 preview then F6`, () => {
+    const settings = { ...suppliedInlaySettings, lidStyle,
+      itemsShown: lidStyle === 'magnetic' ? 'both' : 'lid' };
+    const shells = lidStyle === 'magnetic' ? 2 : 1;
+    const cold = render(settings, shells);
+    const warm = render(settings, shells, undefined, { previewFirst: true });
+    warm.bounds.flat().forEach((v, i) => near(v, cold.bounds.flat()[i], 0.001));
+    assert.equal(warm.triangles.length, cold.triangles.length,
+      'Preview-cached inlays must not introduce extra surfaces into the filled lid');
+
+    const lid = render({ ...settings, itemsShown: 'lid' }, 1, undefined, { previewFirst: true });
+    const body = render({ ...settings, colorShown: 'lid' }, 1, undefined, { previewFirst: true });
+    const engraved = render({ ...settings, itemsShown: 'lid', withColorInlay: false });
+    assert.deepEqual(body.bounds, engraved.bounds);
+    assert.equal(body.triangles.length, engraved.triangles.length);
+    // The sliding thumb notch splits one of the label's glyphs into two solids.
+    const textShells = lidStyle === 'sliding' ? 13 : 12;
+    for (const [part, shells] of [['logo', 9], ['text', textShells]]) {
+      const mesh = render({ ...settings, colorShown: part }, shells, undefined, { previewFirst: true });
+      const low = lidStyle === 'magnetic' ? 0 : 1.5;
+      near(mesh.bounds[0][2], low, 0.001);
+      near(mesh.bounds[1][2], low + 0.5, 0.001);
+      for (const triangle of mesh.triangles.filter(t => t.every(v => Math.abs(v[2] - low) < 1e-5))) {
+        const point = [0, 1].map(axis => triangle.reduce((sum, v) => sum + v[axis], 0) / 3);
+        point.push(low + 0.25);
+        assert.equal(body.contains(point), false, 'Body must leave space for the aligned color part');
+        assert.equal(lid.contains(point), true, 'Combined lid must fill each color cavity');
+      }
+    }
+  });
+
+  test(`${lidStyle} supplied color partitions reconstruct the lid without gaps or overlaps`, () => {
+    const magnetic = lidStyle === 'magnetic';
+    const bodyModule = magnetic ? 'magneticLidBody' : 'slidingLidBody';
+    const settings = { ...suppliedInlaySettings, lidStyle, withLid: false, itemsShown: 'lid' };
+    for (const [name, body] of [
+      ['body/inlay overlap', `intersection() { ${bodyModule}(); lidInlays(${magnetic}, "all"); }`],
+      ['logo/text overlap', `intersection() { lidInlays(${magnetic}, "logo"); lidInlays(${magnetic}, "text"); }`],
+      ['overflow', `difference() {
+        union() { ${bodyModule}(); lidInlays(${magnetic}, "all"); }
+        ${bodyModule}(decorated=false);
+      }`],
+      ['unfilled cavity', `difference() {
+        ${bodyModule}(decorated=false);
+        union() { ${bodyModule}(); lidInlays(${magnetic}, "all"); }
+      }`],
+    ]) assertEmpty(run(settings, 'stl', body), name);
+  });
+}
+
 test('color settings and colorShown options validate and support individual part exports', () => {
   const invalid = run({ colorShown: 'unknown' }, 'csg');
   assert.match(invalid.log, /ERROR: Assertion.*colorShown must be all, box, lid, robot, logo, or text/);
@@ -734,6 +840,12 @@ test('color settings and colorShown options validate and support individual part
     assert.doesNotMatch(result.log, /ERROR:|WARNING:/i);
     assert.match(readFileSync(result.output, 'utf8'), /render\s*\(/,
       'Resolve clipped inlays before F5 to avoid coloring the entire lid');
+    const fullRender = run({ withLid: true, withLidText: true, lidText: 'AB',
+      withColorInlay: true, lidArtworkFile: layoutArtwork, ...colors, $preview: false }, 'csg');
+    assert.equal(fullRender.status, 0, fullRender.log);
+    assert.doesNotMatch(fullRender.log, /ERROR:|WARNING:/i);
+    assert.doesNotMatch(readFileSync(fullRender.output, 'utf8'), /render\s*\(/,
+      'F6 must use exact boolean inlays instead of F5-cached render meshes');
   }
 
   for (const style of ['sliding', 'magnetic']) {
@@ -872,16 +984,9 @@ for (const style of ['sliding', 'magnetic']) {
         }`],
     ];
     for (const [name, body] of probes) {
-      const result = run(settings, 'stl', body);
-      assert.doesNotMatch(result.log, /ERROR:/, name);
-      if (!/Current top level object is empty/.test(result.log)) {
-        const stl = readFileSync(result.output, 'utf8');
-        // CGAL may retain isolated contact vertices, but no printable facets.
-        assert.doesNotMatch(stl, /facet normal/, `${name}: ${stl.slice(0, 1600)}`);
-        assert.match(result.log, /Facets:\s+0/);
-      } else {
-        assert.doesNotMatch(result.log, /WARNING:/, name);
-      }
+      assertEmpty(run(settings, 'stl', body), name);
     }
+    render({ ...settings, withLid: true, itemsShown: 'lid', colorShown: 'all' },
+      1, undefined, { previewFirst: true });
   });
 }
