@@ -136,6 +136,44 @@ test('shared renderer rejects invalid or missing palette output before rendering
   }
 });
 
+test('full-project rendering adds the matching box and its own color without changing lid settings', t => {
+  const f = fixture(t);
+  const definitions = ['boxLength=120', 'lidStyle="magnetic"', 'dividerCountY=2'];
+  const run = (...args) => {
+    const result = f.run(...args);
+    if (args[1][1].endsWith('.csg')) {
+      writeFileSync(args[1][1], ['0.12549, 0.25098, 0.376471, 1', '1, 1, 1, 1',
+        '1, 0.5, 0, 1', '0, 0, 0, 1', '0, 0.501961, 0, 1']
+        .map(color => `color([${color}]) { cube(); }`).join('\n'));
+    }
+    return result;
+  };
+  const result = exportLidParts({ definitions, outputDir: f.outputDir, includeColors: true, includeBox: true }, { ...f, run });
+  assert.deepEqual(result.files.map(file => file.slice(f.outputDir.length + 1)),
+    ['box.stl', 'lid_body.stl', 'lid_logo.stl', 'lid_text.stl']);
+  assert.deepEqual(result.colors, ['#204060', '#FFFFFF', '#000000', '#008000']);
+  assert.equal(f.calls.length, 6);
+  for (const [index, call] of f.calls.slice(2).entries()) {
+    assert.deepEqual(call.args.filter((value, i) => call.args[i - 1] === '-D'), [
+      ...definitions, 'withLid=true', 'withColorInlay=true', 'itemsShown="lid"',
+      `colorShown="${['box', 'lid', 'logo', 'text'][index]}"`,
+    ]);
+  }
+  assertClean(f);
+});
+
+test('box rendering failure aborts the entire full-project export', t => {
+  const f = fixture(t);
+  const run = (...args) => {
+    if (args[1][1].endsWith('box.stl')) return { status: 1, stderr: 'ERROR: Invalid box divider settings' };
+    return f.run(...args);
+  };
+  assert.throws(() => exportLidParts({ outputDir: f.outputDir, includeBox: true }, { ...f, run }), /Invalid box divider/);
+  assert.equal(existsSync(f.outputDir), false);
+  assert.equal(f.calls.length, 1);
+  assertClean(f);
+});
+
 test('accepts an empty output directory but refuses existing files before running', t => {
   const f = fixture(t);
   mkdirSync(f.outputDir);
