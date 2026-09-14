@@ -476,6 +476,12 @@ color names are reported by OpenSCAD. Colors appear in **F5 preview**;
 F6/STL does not retain material colors.
 Inlay preview resolves the clipped solids to avoid coplanar color artifacts;
 the detailed robot can therefore take several minutes even in F5.
+This preview-only resolution is bypassed in F6 so OpenSCAD 2021.01 does not
+reuse preview-cached inlay meshes when combining the lid materials. You can
+preview with F5 and then render with F6 without changing the inlay settings.
+With `withColorInlay=true`, a combined `colorShown="all"` STL is a filled
+single-material lid (and the box when selected); use separate component STLs
+to retain material assignments in the slicer.
 
 `colorShown="all"` honors `itemsShown`. Any other value selects that
 component instead of `itemsShown`, without changing its position.
@@ -647,6 +653,11 @@ on both lid styles, real robot artwork with logo and text, and selected fonts.
 Color checks cover enabled/disabled exports, valid and invalid colors,
 flush aligned inlays, and non-overlapping material partitions that reconstruct
 the original lid even with overlapping or out-of-bounds text.
+The 100 x 95 mm logo-and-`Manual Drill` configuration is also exported as an
+F5 preview PNG followed by STL in the same OpenSCAD process to check for
+preview-cache-dependent non-manifold geometry on both lid styles. These
+checks require working OpenSCAD PNG preview support (a display or virtual
+display on headless systems).
 Magnetic coverage includes the default box, a 300 x 200 x 70 mm example,
 non-default magnets/fit, and a boolean interference check with dividers.
 Temporary render files are removed automatically.

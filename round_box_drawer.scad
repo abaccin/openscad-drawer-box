@@ -242,6 +242,12 @@ module decorationInPrint(part,magnetic=false){
 					   lidThickness,lidEdgeThickness,part=part);
 }
 
+module previewRender(){
+	// F5's cached render() mesh loses exact boundaries needed for F6 material unions.
+	if ($preview) render(convexity=10) children();
+	else children();
+}
+
 module lidInlays(magnetic=false,selected=colorShown){
 	parts=["robot","logo","text"];
 	if (withColorInlay)
@@ -249,7 +255,7 @@ module lidInlays(magnetic=false,selected=colorShown){
 			if (decorationEnabled(parts[i]) && (selected=="all" || selected==parts[i]))
 				color(i==0 ? robotColor : i==1 ? logoColor : textColor)
 				// Resolve coplanar clipping faces so F5 colors only the actual inlay.
-				render(convexity=10)
+				previewRender()
 				intersection(){
 					// Clip cutters to the actual lid, including bevels and the thumb notch.
 					if (magnetic) magneticLidBody(decorated=false);
@@ -259,7 +265,7 @@ module lidInlays(magnetic=false,selected=colorShown){
 						// Higher-priority material owns intersections: text > logo > robot.
 						for (j=[0:2])
 							if (j>i) decorationInPrint(parts[j],magnetic);
-}
+					}
 				}
 	}
 
