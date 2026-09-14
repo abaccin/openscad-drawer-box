@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { exportLidStls, parseArguments, readStlVertices } from '../scripts/export-lid-stls.mjs';
+import { exportLidParts, exportLidStls, parseArguments, readStlVertices } from '../scripts/export-lid-stls.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const script = join(root, 'scripts', 'export-lid-stls.mjs');
@@ -96,6 +96,44 @@ test('default output is relative to model root and disabled decorations are all 
   assert.deepEqual(files, [join(f.modelRoot, 'exports', 'lid-stls', 'lid_body.stl')]);
   assert.equal(f.logs.filter(line => line.startsWith('Skipping')).length, 3);
   assert.equal(readdirSync(join(f.modelRoot, 'exports')).length, 1);
+});
+
+test('shared renderer resolves colors only when requested and omits disabled-part colors', t => {
+  const f = fixture(t);
+  const run = (...args) => {
+    const result = f.run(...args);
+    if (args[1][1].endsWith('.csg')) {
+      writeFileSync(args[1][1], 'color([1, 0, 0, 1]) { cube(); }\n'
+        + ['1, 1, 1, 1', '1, 0.5, 0, 1', '0, 0, 0, 1', '0, 0.501961, 0, 0.5']
+          .map(color => `color([${color}]) { cube(); }`).join('\n'));
+    }
+    return result;
+  };
+  const result = exportLidParts({ outputDir: f.outputDir, includeColors: true }, { ...f, run });
+  assert.deepEqual(result.colors, ['#FFFFFF', '#000000', '#008000']);
+  assert.equal(result.files.length, 3);
+  assert.ok(f.logs.some(message => message.includes('preview transparency')));
+  assert.equal(f.calls.length, 5);
+  for (const call of f.calls) assert.equal(call.args.filter(arg => arg === '-o').length, 1);
+  assertClean(f);
+});
+
+test('shared renderer rejects invalid or missing palette output before rendering', t => {
+  for (const palette of [null, '', 'color([1, 2, 3, 4]) {}'.repeat(4)]) {
+    const f = fixture(t);
+    const run = (...args) => {
+      const result = f.run(...args);
+      if (args[1][1].endsWith('.csg')) {
+        if (palette === null) rmSync(args[1][1]);
+        else writeFileSync(args[1][1], palette);
+      }
+      return result;
+    };
+    assert.throws(() => exportLidParts({ outputDir: f.outputDir, includeColors: true }, { ...f, run }), /palette|RGBA/);
+    assert.equal(f.calls.length, 2);
+    assert.equal(existsSync(f.outputDir), false);
+    assertClean(f);
+  }
 });
 
 test('accepts an empty output directory but refuses existing files before running', t => {

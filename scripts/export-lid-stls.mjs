@@ -24,8 +24,8 @@ Usage: node scripts\\export-lid-stls.mjs [--output-dir DIRECTORY] [-D NAME=VALUE
   -D NAME=VALUE            OpenSCAD definition; repeat for multiple settings.
   --help                  Show this help.
 
-Requires Node.js 18+ and OpenSCAD 2021.01+. Set OPENSCAD to the executable path
-if openscad is not on PATH. Relative output paths use the current directory;
+Requires Node.js 18+ and OpenSCAD 2021.01+. The standard Windows OpenSCAD install
+is detected automatically; otherwise use PATH or set OPENSCAD. Relative output paths use the current directory;
 the default output directory and model are resolved from the script location.
 
 The script controls withLid, withColorInlay, itemsShown, and colorShown.
@@ -110,13 +110,24 @@ export function readStlVertices(data) {
 }
 
 export function exportLidStls(options, {
+  log = console.log, ...dependencies
+} = {}) {
+  const { files } = exportLidParts(options, { ...dependencies, log });
+  log(`Exported ${files.length} aligned STL file(s) to ${dirname(files[0])}`);
+  log('Import these STLs together as one multi-part object; do not arrange the inlays separately. Assign filaments in your slicer.');
+  return files;
+}
+
+export function exportLidParts(options, {
   run = spawnSync, log = console.log, modelRoot = root, timeout = 600_000,
 } = {}) {
   const outputDir = resolve(options.outputDir ?? join(modelRoot, 'exports', 'lid-stls'));
   checkOutputDirectory(outputDir);
   const source = join(modelRoot, 'round_box_drawer.scad');
   if (!existsSync(source)) throw new Error(`Model not found: ${source}`);
-  const configured = process.env.OPENSCAD || 'openscad';
+  const windowsInstall = join(process.env.ProgramFiles || 'C:\\Program Files', 'OpenSCAD', 'openscad.exe');
+  const configured = process.env.OPENSCAD
+    || (process.platform === 'win32' && existsSync(windowsInstall) ? windowsInstall : 'openscad');
   const executable = process.platform === 'win32'
     ? configured.replace(/openscad\.com$/i, 'openscad.exe') : configured;
   const common = (options.definitions ?? []).flatMap(value => ['-D', value]);
@@ -157,7 +168,10 @@ export function exportLidStls(options, {
     mkdirSync(staging);
     const wrapper = join(temporary, 'settings.scad');
     const metadata = join(temporary, 'settings.echo');
-    writeFileSync(wrapper, `include <round_box_drawer.scad>\necho("${marker}", [withLidArtwork, withLidLogo, withLidText]);\n`);
+    const palette = join(temporary, 'palette.csg');
+    const probes = options.includeColors
+      ? '\nfor (c=[lidColor,robotColor,logoColor,textColor]) color(c) cube(1);\n' : '';
+    writeFileSync(wrapper, `include <round_box_drawer.scad>\necho("${marker}", [withLidArtwork, withLidLogo, withLidText]);\n${probes}`);
     log('Evaluating saved lid settings...');
     invoke(['-o', metadata, ...common, '-D', 'colorShown="lid"', wrapper], 'Settings evaluation', metadata);
     if (!existsSync(metadata)) throw new Error('OpenSCAD did not produce settings metadata.');
@@ -166,6 +180,25 @@ export function exportLidStls(options, {
       && records[0].match(/^ECHO:\s*"__DRAWER_LID_EXPORT_FLAGS__",\s*\[(true|false),\s*(true|false),\s*(true|false)\]\s*$/);
     if (!match) throw new Error('OpenSCAD did not report valid boolean decoration settings.');
     const enabled = [true, ...match.slice(1).map(value => value === 'true')];
+    let colors;
+    if (options.includeColors) {
+      // OpenSCAD 2021.01 can crash when .echo and .csg share an invocation.
+      invoke(['-o', palette, ...common, '-D', 'colorShown="lid"', wrapper], 'Color evaluation');
+      if (!existsSync(palette)) throw new Error('OpenSCAD did not produce the color palette.');
+      // The final four color nodes are our probes. OpenSCAD resolves named, hex,
+      // and vector colors here using the same rules as its model preview.
+      const values = [...readFileSync(palette, 'utf8').matchAll(/color\(\[([^\]]+)\]\)/g)].slice(-4);
+      const rgba = values.map(value => value[1].split(',').map(component => Number(component.trim())));
+      if (rgba.length !== 4 || !rgba.every(color =>
+        color.length === 4 && color.every(value => Number.isFinite(value) && value >= 0 && value <= 1))) {
+        throw new Error('OpenSCAD did not report four valid RGBA colors.');
+      }
+      colors = rgba.map(color => '#' + color.slice(0, 3).map(value =>
+        Math.round(value * 255).toString(16).padStart(2, '0')).join('').toUpperCase());
+      if (rgba.some((color, index) => enabled[index] && color[3] !== 1)) {
+        log('Using opaque filament colors; preview transparency cannot be represented by a filament assignment.');
+      }
+    }
     const filenames = [];
     for (const [index, [part, filename]] of parts.entries()) {
       if (!enabled[index]) {
@@ -187,9 +220,10 @@ export function exportLidStls(options, {
     // Recheck after rendering; publish the complete set by a same-volume rename.
     if (checkOutputDirectory(outputDir)) rmdirSync(outputDir);
     renameSync(staging, outputDir);
-    log(`Exported ${filenames.length} aligned STL file(s) to ${outputDir}`);
-    log('Import these STLs together as one multi-part object; do not arrange the inlays separately. Assign filaments in your slicer.');
-    return filenames.map(filename => join(outputDir, filename));
+    return {
+      files: filenames.map(filename => join(outputDir, filename)),
+      colors: colors?.filter((color, index) => enabled[index]),
+    };
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }
