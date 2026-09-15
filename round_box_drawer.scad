@@ -64,7 +64,7 @@ stackingClearance=0.25;
 // Generate a matching box and separate lid; disables the stacking base.
 withLid=true;
 // Sliding preserves the original rails; magnetic lifts off vertically.
-lidStyle="magnetic"; // [sliding,magnetic]
+lidStyle="sliding"; // [sliding,magnetic]
 // Sliding lid thickness; must leave room above the floor and dividers for the rails.
 lidThickness=2;
 // Total reduction in sliding lid width (not per side). Increase for a looser fit.
