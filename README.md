@@ -8,6 +8,9 @@ The model uses millimeters and is compatible with OpenSCAD 2021.01.
 
 The saved box is **100 x 95 x 50 mm** (outside length, width, closed height),
 with a sliding lid, 2.5 mm walls, five Y dividers, and logo/text engravings.
+Its raised side grips add 0.8 mm on each side, making the maximum outside
+width **96.6 mm**. An integral snap detent holds the sliding lid closed and
+releases when pulled.
 With `withLid=false`, its rounded walls reach the full 50 mm height and end
 in a flat, slot-free rim: no sliding-lid rails or grooves are generated.
 With `withStacking=true`, the bottom 3 mm steps inward to
@@ -53,6 +56,8 @@ Text needs an installed font, not an SVG or an external OpenSCAD library.
 4. For a sliding-lid box, set `withLid=true` and leave `lidStyle="sliding"`.
    This generates an external rim and a separate, three-sided skirted lid
    that slides over it. The lid prints exterior-face-down, skirt upward.
+   Raised grips on both long sides help you pull it open; a small snap detent
+   engages when fully closed. Set `withSlidingLock=false` for free sliding.
    With `withLidArtwork=true`, the robot is engraved 0.5 mm into the
    exterior face, not raised; robot artwork is disabled in the saved settings.
    `withLidLogo=true` also adds the small AB engraving opposite the
@@ -110,7 +115,7 @@ to change; geometry calculations remain below the settings.
 | --- | --- | --- |
 | `itemsShown` | `"both"` | Display `"box"`, `"lid"`, or `"both"`; lid visibility also requires `withLid=true`. |
 | `boxLength` | `100` | Outside length along X, including the closed sliding lid. |
-| `boxWidth` | `95` | Outside width along Y. |
+| `boxWidth` | `95` | Nominal outside width along Y, excluding raised sliding grips. |
 | `boxHeight` | `50` | Overall closed height including the lid; lidless walls retain this full height. Sliding rim height is `boxHeight - lidThickness - slidingVerticalClearance`; magnetic walls end at `boxHeight - magneticLidThickness`. |
 | `cornerRadius` | `5` | Outside corner radius in plan view. |
 | `wallThickness` | `2.5` | Main side-wall thickness. Sliding mode reserves part of it for the inset rim and lid skirt. |
@@ -245,7 +250,21 @@ sides and the X=`boxLength` end. Grooves inside the skirt capture a matching
 external bead on the box's inset upper rim. The skirt is open toward X=0;
 the full-width rear wall stops the lid in its closed position. Slide the lid
 off toward **positive X**, rather than lifting it or snapping it over the rim.
-Both parts have localized recessed grip ribs at the opening end.
+Both parts have pronounced raised grip ribs on **both long sides**, parallel
+to the slide direction and near the opening end. These replace the shallow
+short-end grip cuts; the opening-end finger notch is unchanged.
+The slide direction stays along X even if `boxWidth` exceeds `boxLength`.
+
+Small bumps on the box rim engage pockets in two flexible lid-skirt tabs when
+the lid is fully closed. Pulling the lid cams the tabs outward, releasing the
+detent within the first **4.5 mm** of travel. Beyond that, the bumps clear the
+open skirt end rather than rubbing along the whole rail. The retaining grooves
+remain continuous above the tabs. There is no release button or separate part.
+
+**Print a new matching box and lid to use the snap detent.** Older parts lack
+its mating bumps, pockets, and flexible tabs. `withSlidingLock=false` removes
+all three and retains the previous rail/skirt fit. Grips and lock can be
+disabled independently; magnetic and lidless designs are unchanged.
 
 **This replaces the old flat plate and internal rails. Print a new matching
 box and lid together; neither part fits the old sliding design.**
@@ -260,10 +279,18 @@ the Customizer. Magnetic and lidless designs are unchanged.
 | `slidingVerticalClearance` | `0.2` | Vertical fit gap at the plate, shoulder, and groove faces. Independent of lateral fit. |
 | `slidingFloorRadius` | `2` | Interior floor-to-wall fillet radius. `0` disables it. |
 | `slidingEdgeChamfer` | `0.5` | Chamfer around the box base and exterior lid perimeter. `0` disables it. |
-| `withSlidingGrip` | `true` | Recessed, 0.2 mm deep grip ribs within the outside footprint. |
+| `withSlidingGrip` | `true` | Raised vertical ribs on both sliding side walls of the box and lid, near the opening end. |
+| `slidingGripProjection` | `0.8` | Outward projection per side; adds twice this to the maximum outside width. Ignored when grips are disabled. |
+| `withSlidingLock` | `true` | Integral pull-to-release snap detent; disabling it restores free sliding. |
+| `slidingLockInterference` | `0.2` | Intended elastic tab deflection beyond `lidClearance/2`. Smaller values ease release. Ignored when the lock is disabled. |
 
-The closed design envelope is `boxLength x boxWidth x boxHeight`, including
-the lid and its vertical fit allowance. The rim ends at
+The nominal closed envelope is `boxLength x boxWidth x boxHeight`, including
+the lid and its vertical fit allowance. With grips enabled, the maximum width
+is `boxWidth + 2*slidingGripProjection`: **100 x 96.6 x 50 mm** with the saved
+settings. Interior dimensions and rail clearance do not change. Grip patches
+fit the available straight wall sections; their ends ramp into the wall for
+printing. Print-layout spacing expands if needed to keep the parts apart.
+The rim ends at
 `boxHeight - lidThickness - slidingVerticalClearance`. The lower shell's
 shoulder is at
 `boxHeight - lidThickness - slidingSkirtDepth - slidingVerticalClearance`.
@@ -275,13 +302,22 @@ the curved floor transitions.
 
 The inset rim reserves `slidingSkirtThickness + lidClearance/2` from the
 outside wall. At least **0.8 mm** must remain in that rim, and at least
-**0.8 mm** must remain behind the lid groove including any grip cuts.
+**0.8 mm** must remain behind the lid groove and behind each lock pocket.
 For the default skirt and lateral fit, `wallThickness` must be at least
 **2.3 mm**; historical 1 mm sliding walls are no longer suitable.
 `slidingRailDepth` must exceed `lidClearance/2` to retain the lid.
 The corner radius must exceed `wallThickness + slidingFloorRadius` and
 leave straight side sections. Assertions explain configurations that cannot
 fit their rail, skirt, chamfer, floor, dividers, or ledges.
+
+The lock uses 16 mm cantilever sections, 0.6 mm relief slots with rounded ends,
+and 0.15 mm pocket clearance. Bump projection is
+`lidClearance/2 + slidingLockInterference`, so adjusting sliding clearance
+does not silently eliminate retention. The tabs sit below the groove and
+away from the grip patches. Short boxes, shallow skirts, excessive interference,
+and insufficient pocket/root material are rejected explicitly. Disable the
+lock if its geometry cannot fit the chosen dimensions. The conservative
+cantilever strain limit is only a geometry guard, not a material rating.
 
 For a small, reference-like open box, use these overrides while retaining the
 sliding defaults above (the example does not replace the saved configuration):
@@ -305,10 +341,18 @@ withLidText=false;
 ```
 
 Print a small pair first and adjust `lidClearance` and
-`slidingVerticalClearance` for your printer. The 45-degree bead/groove ramps
-and face-down lid are intended to minimize unsupported overhangs, but digital
-clearance checks do not establish printed friction or guarantee support-free
-printing on every machine.
+`slidingVerticalClearance` for your printer. Tune `slidingLockInterference`
+separately: reduce it if the snap is too stiff. Keep relief slots free of
+stringing and check that the tabs flex without cracking; a more flexible
+filament such as PETG can be preferable to brittle PLA. The tapered grips and
+45-degree bead/groove and bump ramps are intended to minimize unsupported
+overhangs with the face-down lid. **The open-ended relief slots leave unsupported
+tab undersides: use local supports under the free tab tips**, and inspect the
+remaining slot span and pocket roofs in your slicer. Remove those supports and
+clear the 0.6 mm slots before flexing the tabs; do not assume the lock prints
+support-free. Digital checks do not establish printed friction, opening force,
+fatigue life, or support-free printing on every machine. The snap is not a
+transport lock or a load rating; do not lift a filled box by its lid.
 Existing configurations that only set `withLid=true` still select this style.
 
 ### Magnetic lid
@@ -853,9 +897,12 @@ colors, assignments, and relative part positions survive. Elsewhere, set
 that compatibility check is explicitly skipped when Bambu Studio is unavailable.
 Project round-trip compatibility was checked with Bambu Studio 2.8.2.
 
-The sliding suite checks three size/fit configurations, collision-free insertion
-through the rounded entry, vertical capture, the closure stop, tall dividers
-and ledges, grip/fillet/chamfer geometry, and invalid fit assertions.
+The sliding suite checks multiple size/fit configurations, including a box wider
+than it is long and a short grip patch. It checks free travel with the lock
+disabled, seated snap clearance, bounded interference confined to flexible tabs
+during release, and unobstructed travel afterward. It also covers vertical
+capture, the closure stop, tall dividers and ledges, actual grip projection,
+expanded print spacing, feature toggles, fillets/chamfers, and invalid fits.
 Both model suites share the same watertightness and point-containment checks.
 Model checks verify exact divider positions and clear sizes for empty, partial, and
 full size lists on both axes. They also render STL meshes for grid (including

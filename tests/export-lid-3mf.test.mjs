@@ -296,6 +296,7 @@ for (const style of ['magnetic', 'sliding']) {
       lidThickness: 2, lidClearance: 0.2, withNotch: true,
       slidingSkirtDepth: 6, slidingSkirtThickness: 1.4, slidingRailDepth: 0.4,
       slidingVerticalClearance: 0.2, slidingFloorRadius: 2, slidingEdgeChamfer: 0.5, withSlidingGrip: true,
+      slidingGripProjection: 0.8, withSlidingLock: true, slidingLockInterference: 0.2,
       magneticLidThickness: 5, magnetDiameter: 3, magnetThickness: 3,
       magnetPocketClearance: 0.1, magnetRecess: 0.1, magneticLidClearance: 0.3,
       magneticLidLocatorDepth: 2, magneticLidLipThickness: 1.2,
@@ -352,7 +353,8 @@ for (const style of ['magnetic', 'sliding']) {
     for (const plate of plates) assert.equal((plate[1].match(/<model_instance>/g) ?? []).length, 1);
     const expected = partBounds(original), actual = partBounds(imported);
     assert.equal(actual.length, 4);
-    assert.deepEqual(expected[1].bounds, [[0, -100, 0], [100, -5, style === 'sliding' ? 8 : 7]],
+    assert.deepEqual(expected[1].bounds, style === 'sliding'
+      ? [[0, -100.8, 0], [100, -4.2, 8]] : [[0, -100, 0], [100, -5, 7]],
       'The packaged lid retains its full footprint and face-down print placement');
     for (const part of expected.slice(2)) {
       assert.equal(part.bounds[0][2], 0, 'Color inlays start at the print face');

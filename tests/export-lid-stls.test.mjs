@@ -293,6 +293,7 @@ for (const style of ['sliding', 'magnetic']) {
       lidClearance: 0.2, withNotch: true, slidingSkirtDepth: 6, slidingSkirtThickness: 1.4,
       slidingRailDepth: 0.4, slidingVerticalClearance: 0.2, slidingFloorRadius: 2,
       slidingEdgeChamfer: 0.5, withSlidingGrip: true,
+      slidingGripProjection: 0.8, withSlidingLock: true, slidingLockInterference: 0.2,
       magneticLidThickness: 5, magnetThickness: 3, magnetRecess: 0.1,
       withLidArtwork: true, lidArtworkFile: artwork, lidArtworkAspect: 1, lidArtworkDepth: 0.5,
       withLidLogo: true, lidLogoSize: 15, lidLogoDepth: 0.5,
@@ -339,7 +340,8 @@ for (const style of ['sliding', 'magnetic']) {
         assert.equal(partBounds[1][2], 0.5, 'Every inlay reaches its configured engraving depth');
       }
     }
-    assert.deepEqual(bodyBounds, [[0, -100, 0], [100, -5, style === 'sliding' ? 8 : 7]]);
+    assert.deepEqual(bodyBounds, style === 'sliding'
+      ? [[0, -100.8, 0], [100, -4.2, 8]] : [[0, -100, 0], [100, -5, 7]]);
     assert.deepEqual(readFileSync(source), before);
     assertClean(f);
   });

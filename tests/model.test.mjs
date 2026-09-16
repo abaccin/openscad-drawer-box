@@ -42,6 +42,7 @@ const slidingSettings = {
   wallThickness: 2.5, slidingSkirtDepth: 6, slidingSkirtThickness: 1.4,
   slidingRailDepth: 0.4, slidingVerticalClearance: 0.2, slidingFloorRadius: 2,
   slidingEdgeChamfer: 0.5, withSlidingGrip: true,
+  slidingGripProjection: 0.8, withSlidingLock: true, slidingLockInterference: 0.2,
 };
 
 function run(settings, extension = 'stl', body, { previewFirst = false } = {}) {
@@ -278,8 +279,8 @@ test('personal logo engraves the correct depth and preserves transparent letter 
   assert.equal(mesh.contains(logoPoint(16, 40, 0.25)), false);
   assert.equal(mesh.contains(logoPoint(16, 40, 0.75)), true);
   assert.equal(mesh.contains(logoPoint(30, 30, 0.25)), true);
-  mesh.bounds[0].forEach((v, i) => near(v, [0, -100, 0][i]));
-  mesh.bounds[1].forEach((v, i) => near(v, [160, -5, 8][i]));
+  mesh.bounds[0].forEach((v, i) => near(v, [0, -100.8, 0][i]));
+  mesh.bounds[1].forEach((v, i) => near(v, [160, -4.2, 8][i]));
 });
 
 test('both engravings share the lid without overlap or through-holes', () => {
