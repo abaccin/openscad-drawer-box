@@ -291,10 +291,18 @@ for (const style of ['magnetic', 'sliding']) {
     const f = fixture(t);
     const definitions = {
       lidStyle: style, boxLength: 100, boxWidth: 95, boxHeight: 50,
-      wallThickness: 2.5, bottomThickness: 2, dividerCountX: 1, dividerCountY: 2,
+      cornerRadius: 5, wallThickness: 2.5, bottomThickness: 2, dividerCountX: 1, dividerCountY: 2,
+      dividerHeight: 25, dividerThickness: 1.2, withStacking: false,
+      lidThickness: 2, lidClearance: 0.2, withNotch: true,
+      slidingSkirtDepth: 6, slidingSkirtThickness: 1.4, slidingRailDepth: 0.4,
+      slidingVerticalClearance: 0.2, slidingFloorRadius: 2, slidingEdgeChamfer: 0.5, withSlidingGrip: true,
+      magneticLidThickness: 5, magnetDiameter: 3, magnetThickness: 3,
+      magnetPocketClearance: 0.1, magnetRecess: 0.1, magneticLidClearance: 0.3,
+      magneticLidLocatorDepth: 2, magneticLidLipThickness: 1.2,
       compartmentSizesX: [], compartmentSizesY: [], pullLedges: 'none',
       withLidArtwork: false, withLidLogo: true, withLidText: true, lidText: 'AB',
       lidLogoSize: 15, lidTextSize: 6, lidTextPositionX: 70, lidTextPositionY: 25,
+      lidLogoDepth: 0.5, lidTextDepth: 0.5, lidTextBandHeight: 20,
       boxColor: '#204060', lidColor: 'white', logoColor: [0, 0, 0], textColor: '#008000', $fn: 16,
     };
     const sourceBefore = readFileSync(join(root, 'round_box_drawer.scad'));
@@ -344,6 +352,12 @@ for (const style of ['magnetic', 'sliding']) {
     for (const plate of plates) assert.equal((plate[1].match(/<model_instance>/g) ?? []).length, 1);
     const expected = partBounds(original), actual = partBounds(imported);
     assert.equal(actual.length, 4);
+    assert.deepEqual(expected[1].bounds, [[0, -100, 0], [100, -5, style === 'sliding' ? 8 : 7]],
+      'The packaged lid retains its full footprint and face-down print placement');
+    for (const part of expected.slice(2)) {
+      assert.equal(part.bounds[0][2], 0, 'Color inlays start at the print face');
+      assert.equal(part.bounds[1][2], 0.5, 'Color inlays end at the engraving floor');
+    }
     for (let part = 0; part < 4; part++) {
       assert.equal(actual[part].triangles, expected[part].triangles);
       for (let bound = 0; bound < 2; bound++) {

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, test } from 'node:test';
+import { inspectMesh } from './helpers/mesh.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const configured = process.env.OPENSCAD || 'openscad';
@@ -14,6 +15,34 @@ const executable = process.platform === 'win32'
 const temporary = mkdtempSync(join(tmpdir(), 'drawer-box-test-'));
 let sequence = 0;
 after(() => rmSync(temporary, { recursive: true, force: true }));
+
+// Regression fixtures must not depend on the user's saved Customizer settings.
+const historicalSettings = {
+  itemsShown: 'both', colorShown: 'all', withColorInlay: false,
+  boxColor: 'white', lidColor: 'white', robotColor: 'black', logoColor: 'black', textColor: 'green',
+  boxLength: 160, boxWidth: 95, boxHeight: 50, cornerRadius: 5,
+  wallThickness: 1, bottomThickness: 2,
+  dividerCountX: 0, dividerCountY: 0, dividerHeight: 25, dividerThickness: 1.2,
+  compartmentSizesX: [], compartmentSizesY: [],
+  withStacking: true, stackingDepth: 3, stackingClearance: 0.25,
+  withLid: false, lidStyle: 'sliding', lidThickness: 2, lidClearance: 0.2, withNotch: true,
+  magneticLidThickness: 5, magnetDiameter: 3, magnetThickness: 3,
+  magnetPocketClearance: 0.1, magnetRecess: 0.1, magneticLidClearance: 0.3,
+  magneticLidLocatorDepth: 2, magneticLidLipThickness: 1.2,
+  pullLedges: 'both', pullWidth: 30, pullProjection: 6, pullThickness: 3, pullTopOffset: 8,
+  withLidArtwork: true, lidArtworkFile: 'robot-relief.svg', lidArtworkDepth: 0.5,
+  lidArtworkMargin: 8, lidArtworkLineGrowth: 0.2, lidArtworkAspect: 939 / 453,
+  withLidLogo: true, lidLogoFile: 'ab-logo-monochrome.svg',
+  lidLogoSize: 12, lidLogoDepth: 0.5, lidLogoMargin: 4,
+  withLidText: false, lidText: 'Tools', lidTextFont: 'Liberation Sans:style=Bold',
+  lidTextSize: 8, lidTextDepth: 0.5, lidTextBandHeight: 20, lidTextMargin: 4,
+  lidTextPositionX: undefined, lidTextPositionY: undefined, internalClearance: 0.5,
+};
+const slidingSettings = {
+  wallThickness: 2.5, slidingSkirtDepth: 6, slidingSkirtThickness: 1.4,
+  slidingRailDepth: 0.4, slidingVerticalClearance: 0.2, slidingFloorRadius: 2,
+  slidingEdgeChamfer: 0.5, withSlidingGrip: true,
+};
 
 function run(settings, extension = 'stl', body, { previewFirst = false } = {}) {
   const output = join(temporary, `${sequence++}.${extension}`);
@@ -27,8 +56,14 @@ function run(settings, extension = 'stl', body, { previewFirst = false } = {}) {
   args.push('-o', output);
   // --export-format applies to every output, so it would turn the PNG into an STL.
   if (extension === 'stl' && !previewFirst) args.push('--export-format', 'asciistl');
-  for (const [name, value] of Object.entries(settings)) {
-    args.push('-D', `${name}=${JSON.stringify(value)}`);
+  const activeSliding = (settings.withLid ?? historicalSettings.withLid)
+    && (settings.lidStyle ?? historicalSettings.lidStyle) === 'sliding';
+  const fixtureSettings = {
+    ...slidingSettings, ...historicalSettings,
+    ...(activeSliding ? slidingSettings : {}), ...settings,
+  };
+  for (const [name, value] of Object.entries(fixtureSettings)) {
+    args.push('-D', `${name}=${value === undefined ? 'undef' : JSON.stringify(value)}`);
   }
   let source = join(root, 'round_box_drawer.scad');
   if (body) {
@@ -49,14 +84,6 @@ function run(settings, extension = 'stl', body, { previewFirst = false } = {}) {
   return { ...result, output, log: result.stdout + result.stderr };
 }
 
-const subtract = (a, b) => a.map((v, i) => v - b[i]);
-const dot = (a, b) => a.reduce((sum, v, i) => sum + v * b[i], 0);
-const cross = (a, b) => [
-  a[1] * b[2] - a[2] * b[1],
-  a[2] * b[0] - a[0] * b[2],
-  a[0] * b[1] - a[1] * b[0],
-];
-
 function render(settings = {}, expectedShells = 1, body, options) {
   const result = run({ itemsShown: 'box', ...settings }, 'stl', body, options);
   assert.equal(result.status, 0, result.log);
@@ -75,64 +102,7 @@ function render(settings = {}, expectedShells = 1, body, options) {
       /vertex\s+([-\d.e+]+)\s+([-\d.e+]+)\s+([-\d.e+]+)/gi,
     )].map(match => match.slice(1).map(Number));
   }
-  assert.ok(vertices.length > 0, 'Render must contain geometry');
-  assert.equal(vertices.length % 3, 0);
-  const triangles = [];
-  for (let i = 0; i < vertices.length; i += 3) triangles.push(vertices.slice(i, i + 3));
-  const edges = new Map();
-  const neighbors = new Map();
-  for (const triangle of triangles) {
-    const keys = triangle.map(vertex => vertex.join(','));
-    for (let i = 0; i < 3; i++) {
-      const a = keys[i], b = keys[(i + 1) % 3];
-      const edge = [a, b].sort().join('|');
-      edges.set(edge, (edges.get(edge) || 0) + 1);
-      if (!neighbors.has(a)) neighbors.set(a, new Set());
-      neighbors.get(a).add(b);
-    }
-  }
-  assert.ok([...edges.values()].every(count => count === 2), 'Mesh must be watertight');
-  const visited = new Set();
-  let shells = 0;
-  for (const start of neighbors.keys()) {
-    if (visited.has(start)) continue;
-    shells++;
-    const pending = [start];
-    while (pending.length) {
-      const key = pending.pop();
-      if (visited.has(key)) continue;
-      visited.add(key);
-      pending.push(...neighbors.get(key));
-    }
-  }
-  assert.equal(shells, expectedShells, 'Exported mesh must have the expected connected shells');
-
-  return {
-    triangles,
-    bounds: [Math.min, Math.max].map(fn =>
-      [0, 1, 2].map(axis => vertices.reduce(
-        (bound, point) => fn(bound, point[axis]), fn === Math.min ? Infinity : -Infinity,
-      )),
-    ),
-    contains(point) {
-      // Non-axis-aligned ray avoids shared edges at grid and engraving coordinates.
-      const direction = [1, 0.123457, 0.234569];
-      const distances = [];
-      for (const [a, b, c] of triangles) {
-        const edge1 = subtract(b, a), edge2 = subtract(c, a);
-        const p = cross(direction, edge2), determinant = dot(edge1, p);
-        if (Math.abs(determinant) < 1e-9) continue;
-        const t = subtract(point, a), u = dot(t, p) / determinant;
-        if (u < 0 || u > 1) continue;
-        const q = cross(t, edge1), v = dot(direction, q) / determinant;
-        if (v < 0 || u + v > 1) continue;
-        const distance = dot(edge2, q) / determinant;
-        if (distance > 1e-7) distances.push(distance);
-      }
-      distances.sort((a, b) => a - b);
-      return distances.filter((v, i) => i === 0 || v - distances[i - 1] > 1e-7).length % 2 === 1;
-    },
-  };
+  return inspectMesh(vertices, expectedShells);
 }
 
 function near(actual, expected, tolerance = 0.03) {
@@ -274,7 +244,7 @@ for (const [sizesX, sizesY, expectedX, expectedY] of [
 
 for (const [name, settings, floor, height, point] of [
   ['stacking', { dividerCountX: 1 }, 5, 41.5, [80, 20]],
-  ['lid rails', { withLid: true, dividerCountY: 1 }, 2, 44.5, [80, 47.5]],
+  ['sliding plate', { withLid: true, dividerCountY: 1 }, 2, 45.5, [80, 47.5]],
   ['flat full-height box', { withStacking: false, dividerCountX: 1 }, 2, 48, [80, 20]],
 ]) {
   test(`dividers respect the exact maximum height for ${name}`, () => {
@@ -304,16 +274,17 @@ const lidSettings = { withLid: true, itemsShown: 'lid' };
 
 test('personal logo engraves the correct depth and preserves transparent letter cutouts', () => {
   const mesh = render({ ...lidSettings, withLidArtwork: false });
-  const logoPoint = (x, y, z) => [10 + (x - 50) * 12 / 89, -48.4 + (50 - y) * 12 / 89, z];
-  assert.equal(mesh.contains(logoPoint(16, 40, 1.75)), false);
-  assert.equal(mesh.contains(logoPoint(16, 40, 1.25)), true);
-  assert.equal(mesh.contains(logoPoint(30, 30, 1.75)), true);
-  near(mesh.bounds[1][2], 2);
+  const logoPoint = (x, y, z) => [10 + (x - 50) * 12 / 89, -52.5 - (50 - y) * 12 / 89, z];
+  assert.equal(mesh.contains(logoPoint(16, 40, 0.25)), false);
+  assert.equal(mesh.contains(logoPoint(16, 40, 0.75)), true);
+  assert.equal(mesh.contains(logoPoint(30, 30, 0.25)), true);
+  mesh.bounds[0].forEach((v, i) => near(v, [0, -100, 0][i]));
+  mesh.bounds[1].forEach((v, i) => near(v, [160, -5, 8][i]));
 });
 
 test('both engravings share the lid without overlap or through-holes', () => {
   const mesh = render(lidSettings);
-  const engraved = mesh.triangles.filter(triangle => triangle.every(v => Math.abs(v[2] - 1.5) < 1e-5));
+  const engraved = mesh.triangles.filter(triangle => triangle.every(v => Math.abs(v[2] - 0.5) < 1e-5));
   const logo = engraved.filter(triangle => triangle.every(v => v[0] < 20));
   const robot = engraved.filter(triangle => triangle.every(v => v[0] > 20));
   assert.ok(logo.length > 0 && robot.length > 0, 'Both SVGs must actually be engraved');
@@ -321,20 +292,20 @@ test('both engravings share the lid without overlap or through-holes', () => {
     assert.ok(vertex[0] >= 3.99 && vertex[0] <= 16.01);
   }
   for (const triangle of robot) for (const vertex of triangle) assert.ok(vertex[0] >= 27.9);
-  assert.equal(mesh.contains([10, -48.4, 1]), true);
-  assert.equal(mesh.contains([80, -48.4, 1]), true);
+  assert.equal(mesh.contains([10, -52.5, 1]), true);
+  assert.equal(mesh.contains([80, -52.5, 1]), true);
 });
 
 test('disabled engravings do not import their SVGs', () => {
   const mesh = render({ ...lidSettings, withLidArtwork: false, withLidLogo: false,
     lidArtworkFile: 'missing-robot.svg', lidLogoFile: 'missing-logo.svg' });
-  assert.equal(mesh.contains([10, -48.4, 1.75]), true);
-  assert.equal(mesh.contains([80, -48.4, 1.75]), true);
+  assert.equal(mesh.contains([10, -52.5, 0.25]), true);
+  assert.equal(mesh.contains([80, -52.5, 0.25]), true);
 });
 
 test('logo size and depth are independently parametric', () => {
   const mesh = render({ ...lidSettings, withLidArtwork: false, lidLogoSize: 18, lidLogoDepth: 0.8 });
-  const engraved = mesh.triangles.filter(t => t.every(v => Math.abs(v[2] - 1.2) < 1e-5)).flat();
+  const engraved = mesh.triangles.filter(t => t.every(v => Math.abs(v[2] - 0.8) < 1e-5)).flat();
   assert.ok(engraved.length > 0);
   near(Math.min(...engraved.map(v => v[0])), 4);
   near(Math.max(...engraved.map(v => v[0])), 22);
@@ -365,12 +336,12 @@ const invalid = [
   [{ dividerCountY: 100 }, /no compartment space along Y/],
   [{ dividerCountX: 1, dividerHeight: 0 }, /dividerHeight must be positive/],
   [{ dividerCountX: 1, dividerHeight: 41.51 }, /must not exceed 41.5/],
-  [{ withLid: true, dividerCountY: 1, dividerHeight: 44.51 }, /must not exceed 44.5/],
+  [{ withLid: true, dividerCountY: 1, dividerHeight: 45.51 }, /must not exceed 45.5/],
   [{ withStacking: false, dividerCountX: 1, dividerHeight: 48.01 }, /must not exceed 48/],
   [{ internalClearance: 0 }, /internalClearance must be positive/],
   [{ ...lidSettings, lidLogoDepth: 2 }, /Lid logo depth/],
   [{ ...lidSettings, lidLogoSize: 0 }, /Lid logo size/],
-  [{ ...lidSettings, lidLogoMargin: 1 }, /Lid logo margin must clear/],
+  [{ ...lidSettings, lidLogoMargin: 0.99 }, /Lid logo margin must clear/],
   [{ ...lidSettings, withLidArtwork: false, lidLogoSize: 100 }, /too small for the logo/],
   [{ ...lidSettings, lidArtworkAspect: 0 }, /aspect ratio must be positive/],
 ];
@@ -604,7 +575,7 @@ test('magnetic invalid parameters fail with actionable assertions', () => {
     [{ itemsShown: 'lid', withLidLogo: true, lidLogoDepth: 0.91 }, /engraving must leave at least 1 mm/],
     [{ itemsShown: 'lid', withLidArtwork: true, lidArtworkDepth: 'deep' }, /depth must be positive and numeric/],
     [{ itemsShown: 'lid', withLidArtwork: true, lidArtworkDepth: 0.91 }, /engraving must leave at least 1 mm/],
-    [{ itemsShown: 'lid', withLidLogo: true, lidLogoMargin: 0.49 }, /margin must clear the magnetic edge/],
+    [{ itemsShown: 'lid', withLidLogo: true, lidLogoMargin: 0.49 }, /margin must clear the lid edge/],
   ]) {
     const result = run({ ...magneticSettings, itemsShown: 'box', ...settings }, 'csg');
     assert.match(result.log, /ERROR: Assertion/, JSON.stringify(settings));
@@ -624,21 +595,20 @@ for (const style of ['sliding', 'magnetic']) {
       const settings = { ...magneticSettings, lidStyle: style, itemsShown: 'lid',
         withLidText: true, lidText: 'Tools', lidTextFont: font, lidTextDepth: 0.6 };
       const mesh = render(settings);
-      const bottom = style === 'magnetic' ? 0.6 : 1.4;
+      const bottom = 0.6;
       const vertices = planeVertices(mesh, bottom);
       assert.ok(vertices.length > 0, 'The label must actually be engraved');
       const xs = vertices.map(v => v[0]), ys = vertices.map(v => v[1]);
       widths.push(Math.max(...xs) - Math.min(...xs));
-      const xCenter = style === 'magnetic' ? 80 : 79.5;
-      const yCenter = style === 'magnetic' ? -49.5 : -48.4;
+      const xCenter = 80;
+      const yCenter = style === 'magnetic' ? -49.5 : -52.5;
       near((Math.min(...xs) + Math.max(...xs)) / 2, xCenter, 0.5);
       near((Math.min(...ys) + Math.max(...ys)) / 2, yCenter, 1.5);
       const triangle = mesh.triangles.find(t => t.every(v => Math.abs(v[2] - bottom) < 1e-5));
       const x = triangle.reduce((sum, v) => sum + v[0], 0) / 3;
       const y = triangle.reduce((sum, v) => sum + v[1], 0) / 3;
-      const direction = style === 'magnetic' ? -1 : 1;
-      assert.equal(mesh.contains([x, y, bottom + direction * 0.1]), false);
-      assert.equal(mesh.contains([x, y, bottom - direction * 0.1]), true, 'Text does not cut through');
+      assert.equal(mesh.contains([x, y, bottom - 0.1]), false);
+      assert.equal(mesh.contains([x, y, bottom + 0.1]), true, 'Text does not cut through');
     }
     assert.ok(Math.abs(widths[0] - widths[1]) > 0.5, 'Selecting a different installed font changes glyph geometry');
   });
@@ -654,19 +624,19 @@ for (const style of ['sliding', 'magnetic']) {
       if (lidTextPositionX !== undefined) settings.lidTextPositionX = lidTextPositionX;
       if (lidTextPositionY !== undefined) settings.lidTextPositionY = lidTextPositionY;
       const mesh = render(settings);
-      const vertices = planeVertices(mesh, style === 'magnetic' ? 0.5 : 1.5);
+      const vertices = planeVertices(mesh, 0.5);
       return [Math.min(...vertices.map(v => v[0])), Math.max(...vertices.map(v => v[0])),
         Math.min(...vertices.map(v => v[1])), Math.max(...vertices.map(v => v[1]))];
     });
     const [centered, first, second] = bounds;
-    const expectedCenter = style === 'magnetic' ? [80, -49.5] : [79.5, -48.4];
+    const expectedCenter = style === 'magnetic' ? [80, -49.5] : [80, -52.5];
     near((centered[0] + centered[1]) / 2, expectedCenter[0], 0.1);
     near((centered[2] + centered[3]) / 2, expectedCenter[1], 1.5);
     near((first[0] + first[1] - centered[0] - centered[1]) / 2, 30 - expectedCenter[0], 0.001);
     near((first[2] + first[3] - centered[2] - centered[3]) / 2,
-      style === 'magnetic' ? 47.5 - 25 : 25 - 46.4, 0.001);
+      47.5 - 25, 0.001);
     near((second[0] + second[1] - first[0] - first[1]) / 2, 100, 0.001);
-    near((second[2] + second[3] - first[2] - first[3]) / 2, style === 'magnetic' ? -45 : 45, 0.001);
+    near((second[2] + second[3] - first[2] - first[3]) / 2, -45, 0.001);
   });
 }
 
@@ -695,11 +665,11 @@ for (const style of ['sliding', 'magnetic']) {
         lidLogoDepth: 0.5, lidTextDepth: 0.6, lidText: 'Tools' };
       const mesh = render(settings);
       for (const [flag, depth] of [[1, 0.4], [2, 0.5], [4, 0.6]]) {
-        const vertices = planeVertices(mesh, style === 'magnetic' ? depth : 2 - depth);
+        const vertices = planeVertices(mesh, depth);
         assert.equal(vertices.length > 0, Boolean(mask & flag), `style=${style}, mask=${mask}, feature=${flag}`);
         if (mask & 4 && flag === 1) {
-          const boundary = style === 'magnetic' ? -22 : -74.8;
-          assert.ok(vertices.every(v => style === 'magnetic' ? v[1] < boundary : v[1] > boundary),
+          const boundary = style === 'magnetic' ? -22 : -25;
+          assert.ok(vertices.every(v => v[1] < boundary),
             'Artwork is fitted outside the reserved text band');
         }
       }
@@ -745,7 +715,7 @@ test('invalid lid text settings fail explicitly without geometry warnings', () =
     [{ lidTextMargin: '4' }, /lidTextMargin must clear/],
     [{ lidTextPositionX: '80' }, /lidTextPositionX must be a number or undef/],
     [{ lidTextPositionY: [] }, /lidTextPositionY must be a number or undef/],
-    [{ lidStyle: 'sliding', lidTextMargin: 1 }, /lidTextMargin must clear/],
+    [{ lidStyle: 'sliding', lidTextMargin: 0.99 }, /lidTextMargin must clear/],
     [{ lidStyle: 'sliding', lidTextDepth: 2 }, /less than the active lid thickness/],
     [{ withLidArtwork: true, lidTextBandHeight: 90 }, /too small for the artwork margins/],
   ]) {
@@ -791,11 +761,9 @@ for (const lidStyle of ['sliding', 'magnetic']) {
     const engraved = render({ ...settings, itemsShown: 'lid', withColorInlay: false });
     assert.deepEqual(body.bounds, engraved.bounds);
     assert.equal(body.triangles.length, engraved.triangles.length);
-    // The sliding thumb notch splits one of the label's glyphs into two solids.
-    const textShells = lidStyle === 'sliding' ? 13 : 12;
-    for (const [part, shells] of [['logo', 9], ['text', textShells]]) {
+    for (const [part, shells] of [['logo', 9], ['text', 12]]) {
       const mesh = render({ ...settings, colorShown: part }, shells, undefined, { previewFirst: true });
-      const low = lidStyle === 'magnetic' ? 0 : 1.5;
+      const low = 0;
       near(mesh.bounds[0][2], low, 0.001);
       near(mesh.bounds[1][2], low + 0.5, 0.001);
       for (const triangle of mesh.triangles.filter(t => t.every(v => Math.abs(v[2] - low) < 1e-5))) {
@@ -892,7 +860,7 @@ for (const style of ['sliding', 'magnetic']) {
     const logoMesh = render({ ...baseSettings, colorShown: 'logo' }, 9);
     const robotMesh = render({ ...baseSettings, colorShown: 'robot' }, 1);
     const filled = render({ ...baseSettings, itemsShown: 'lid', colorShown: 'all' });
-    const low = style === 'magnetic' ? 0 : 1.5, high = low + 0.5;
+    const low = 0, high = 0.5;
     for (const mesh of [textMesh, logoMesh, robotMesh]) {
       near(mesh.bounds[0][2], low, 0.001);
       near(mesh.bounds[1][2], high, 0.001);
@@ -945,7 +913,7 @@ for (const style of ['sliding', 'magnetic']) {
   test(`${style} color partitions have no overlap or overflow and reconstruct the undecorated lid`, () => {
     const magnetic = style === 'magnetic';
     const bodyModule = magnetic ? 'magneticLidBody' : 'slidingLidBody';
-    const settings = { withLid: false, itemsShown: 'lid', withColorInlay: true,
+    const settings = { withLid: false, lidStyle: style, itemsShown: 'lid', withColorInlay: true,
       withLidArtwork: true, lidArtworkFile: layoutArtwork,
       withLidLogo: true, lidLogoFile: layoutArtwork, lidLogoSize: 40,
       withLidText: true, lidText: 'MMMMMMMM', lidTextSize: 20, lidTextBandHeight: 40,

@@ -63,16 +63,30 @@ stackingClearance=0.25;
 /* [Lid] */
 // Generate a matching box and separate lid; disables the stacking base.
 withLid=true;
-// Sliding preserves the original rails; magnetic lifts off vertically.
+// Sliding wraps over an external rim; magnetic lifts off vertically.
 lidStyle="sliding"; // [sliding,magnetic]
-// Sliding lid thickness; must leave room above the floor and dividers for the rails.
+// Sliding lid plate thickness, excluding its downward skirt when assembled.
 lidThickness=2;
-// Total reduction in sliding lid width (not per side). Increase for a looser fit.
+// Total lateral sliding fit allowance: half on each side between rim and skirt.
 lidClearance=0.2;
-// Thickness at the sliding lid's beveled edges; between 0 and lidThickness.
-lidEdgeThickness=0.5;
-// Sliding: thumb notch. Magnetic: underside finger recess at the X=boxLength edge.
+// Sliding: recess in the skirt's lower edge. Magnetic: underside finger recess.
 withNotch=true;
+
+/* [Sliding lid] */
+// Skirt depth below the plate when closed. The lid prints face-down, skirt upward.
+slidingSkirtDepth=6;
+// Skirt wall before cutting its groove; must also leave room for the box rim.
+slidingSkirtThickness=1.4;
+// Outward rail projection; the matching groove retains the lid against lifting.
+slidingRailDepth=0.4;
+// Vertical gap at the plate, skirt shoulder, and each groove face.
+slidingVerticalClearance=0.2;
+// Radius of the box's interior floor-to-wall transition. 0 disables it.
+slidingFloorRadius=2;
+// Chamfer on the box base and exterior lid perimeter. 0 disables it.
+slidingEdgeChamfer=0.5;
+// Recessed grip ribs on the opening end of the box and lid, within the footprint.
+withSlidingGrip=true;
 
 /* [Magnetic lid] */
 // Full plate thickness, excluding the inset lip. Requires room for pockets and engraving.
@@ -119,7 +133,7 @@ lidArtworkLineGrowth=0.2;
 lidArtworkAspect=939/453;
 
 /* [Personal lid logo] */
-// Engrave the small AB logo opposite the thumb notch, with or without the robot artwork.
+// Engrave the small AB logo opposite the opening recess, with or without robot artwork.
 withLidLogo=true;
 // Personal SVG path relative to this SCAD file.
 lidLogoFile="ab-logo-monochrome.svg";
@@ -127,7 +141,7 @@ lidLogoFile="ab-logo-monochrome.svg";
 lidLogoSize=25;
 // Logo depth; magnetic lids must also retain 1 mm of skin above the magnet pockets.
 lidLogoDepth=0.5;
-// Space around the logo strip; must clear the sliding bevel or magnetic edge by internalClearance.
+// Space around the logo strip; must clear the active lid edge by internalClearance.
 lidLogoMargin=4;
 
 /* [Custom lid text] */
@@ -143,7 +157,7 @@ lidTextSize=8;
 lidTextDepth=0.5;
 // Height of the reserved label band along Y; the robot is fitted into the remaining area.
 lidTextBandHeight=20;
-// Empty margin around the reserved label band, including clearance from the sliding bevel.
+// Empty margin around the reserved label band, including clearance from the lid edge.
 lidTextMargin=4;
 // Label center along X from the lid's X=0 edge. undef centers it on the active lid.
 lidTextPositionX=undef;
@@ -151,11 +165,13 @@ lidTextPositionX=undef;
 lidTextPositionY=undef;
 
 /* [Fit and clearance] */
-// Minimum vertical gap under bases/rails/magnetic lip and below ledges; must be positive.
+// Minimum vertical gap under bases/sliding plate/magnetic lip and below ledges.
 internalClearance=0.5;
 
 /* [Hidden] */
 // End of user settings. Geometry and calculated values below do not need editing.
+// Legacy flat-plate setting; ignored by the external-rim sliding design.
+lidEdgeThickness=0.5;
 assert(is_bool(withLid),"withLid must be true or false.");
 assert(is_bool(withStacking),"withStacking must be true or false.");
 assert(is_bool(withLidLogo),"withLidLogo must be true or false.");
@@ -184,6 +200,7 @@ function decorationEnabled(part)=
 	part=="robot" ? withLidArtwork : part=="logo" ? withLidLogo : withLidText;
 
 if (withLid && lidStyle=="magnetic") magneticChecks() scene();
+else if (withLid) slidingChecks() scene();
 else scene();
 
 module scene(){
@@ -210,18 +227,11 @@ module showLid(){
 }
 
 module slidingLidBody(decorated=true){
-	l=boxLength-wallThickness;
-	w=boxWidth-2*wallThickness-lidClearance;
 	color(lidColor)
-	translate ([0, -2*wallThickness, 0])
 	difference(){
-		roundBoxLid(l=l,
-					w=w,
-					h=lidThickness,
-					et=lidEdgeThickness,
-					r=cornerRadius-wallThickness,
-					notch=withNotch);
-		if (decorated) lidDecorations(l=l,w=w,h=lidThickness,et=lidEdgeThickness);
+		slidingPrintPlacement() slidingLidBlank();
+		if (decorated)
+			for (part=["robot","logo","text"]) decorationInPrint(part);
 	}
 }
 
@@ -235,11 +245,13 @@ module decorationInPrint(part,magnetic=false){
 		translate([0,0,magneticLidThickness])
 		rotate([180,0,0])
 		lidDecorations(boxLength,boxWidth,magneticLidThickness,magneticLidThickness,
-					   beveled=false,part=part);
+					   part=part);
 	else
-		translate([0,-2*wallThickness,0])
-		lidDecorations(boxLength-wallThickness,boxWidth-2*wallThickness-lidClearance,
-					   lidThickness,lidEdgeThickness,part=part);
+		slidingPrintPlacement()
+		translate([0,0,lidThickness])
+		rotate([180,0,0])
+		lidDecorations(boxLength,boxWidth,lidThickness,lidThickness-slidingEdgeChamfer,
+					   part=part);
 }
 
 module previewRender(){
@@ -257,7 +269,7 @@ module lidInlays(magnetic=false,selected=colorShown){
 				// Resolve coplanar clipping faces so F5 colors only the actual inlay.
 				previewRender()
 				intersection(){
-					// Clip cutters to the actual lid, including bevels and the thumb notch.
+					// Clip cutters to the actual lid, including its chamfer and recess.
 					if (magnetic) magneticLidBody(decorated=false);
 					else slidingLidBody(decorated=false);
 					difference(){
@@ -286,7 +298,7 @@ module lidTextChecks(l,w,h,et){
 		assert(is_num(lidTextBandHeight) && lidTextBandHeight>0 && lidTextBandHeight<w,
 			   "lidTextBandHeight must be positive and smaller than the lid width.");
 		assert(is_num(lidTextMargin) && lidTextMargin>=h-et+internalClearance,
-			   "lidTextMargin must clear the lid edge/bevel by internalClearance.");
+			   "lidTextMargin must clear the lid edge by internalClearance.");
 		assert(is_undef(lidTextPositionX) || is_num(lidTextPositionX),
 			   "lidTextPositionX must be a number or undef for centered text.");
 		assert(is_undef(lidTextPositionY) || is_num(lidTextPositionY),
@@ -299,7 +311,7 @@ module lidTextChecks(l,w,h,et){
 	children();
 }
 
-module lidDecorations(l,w,h,et,beveled=true,cutter=true,part="all"){
+module lidDecorations(l,w,h,et,cutter=true,part="all"){
 	lidTextChecks(l,w,h,et)
 	let(logoStrip=withLidLogo ? lidLogoSize+2*lidLogoMargin : 0,
 		textStrip=withLidText ? lidTextBandHeight : 0,
@@ -309,7 +321,7 @@ module lidDecorations(l,w,h,et,beveled=true,cutter=true,part="all"){
 			translate([logoStrip,0,0])
 			lidArtwork(l=l-logoStrip,w=w-textStrip,h=h,cutter=cutter);
 		if (withLidLogo && (part=="all" || part=="logo"))
-			lidLogo(l=l,w=w,h=h,et=et,beveled=beveled,cutter=cutter);
+			lidLogo(l=l,w=w,h=h,et=et,cutter=cutter);
 		if (withLidText && (part=="all" || part=="text")){
 			if (cutter)
 				echo(str("Text uses font '",lidTextFont,"' at size ",lidTextSize,
@@ -339,13 +351,12 @@ module lidArtwork(l,w,h,cutter=true){
 	import(file=lidArtworkFile,center=true);
 }
 
-module lidLogo(l,w,h,et,beveled=true,cutter=true){
+module lidLogo(l,w,h,et,cutter=true){
 	assert(lidLogoSize>0,"Lid logo size must be positive.");
 	assert(lidLogoDepth>0 && lidLogoDepth<h,
 		   "Lid logo depth must be positive and less than the lid thickness.");
 	assert(lidLogoMargin>=h-et+internalClearance,
-		   beveled ? "Lid logo margin must clear the bevel: lidThickness - lidEdgeThickness + internalClearance." :
-		   "Lid logo margin must clear the magnetic edge by internalClearance.");
+		   "Lid logo margin must clear the lid edge by internalClearance.");
 	assert(lidLogoSize+2*lidLogoMargin<min(l,w),
 		   "The lid is too small for the logo and its margins.");
 
@@ -366,21 +377,198 @@ module lidTextGeometry(l,w,h,textX,textY,cutter=true){
 module showBox(){
 	color(boxColor) {
 		if (withLid && lidStyle=="magnetic") magneticBox();
+		else if (withLid) slidingBox();
 		else configuredBox();
 	}
 }
 
+function slidingRimInset()=slidingSkirtThickness+lidClearance/2;
+function slidingSeat()=boxHeight-lidThickness;
+function slidingShoulder()=slidingSeat()-slidingSkirtDepth-slidingVerticalClearance;
+function slidingRailCenter()=slidingSeat()-slidingSkirtDepth/3;
+function slidingRailHalfFlat()=slidingRailDepth/2;
+function slidingGripDepth()=withSlidingGrip ? 0.2 : 0;
+function slidingDividerTop()=slidingSeat()-internalClearance;
+
+module slidingChecks(){
+	for (setting=[["lidThickness",lidThickness],["lidClearance",lidClearance],
+				  ["slidingSkirtDepth",slidingSkirtDepth],
+				  ["slidingSkirtThickness",slidingSkirtThickness],
+				  ["slidingRailDepth",slidingRailDepth],
+				  ["slidingVerticalClearance",slidingVerticalClearance]])
+		assert(is_num(setting[1]) && setting[1]>0,str(setting[0]," must be positive."));
+	for (setting=[["slidingFloorRadius",slidingFloorRadius],
+				  ["slidingEdgeChamfer",slidingEdgeChamfer]])
+		assert(is_num(setting[1]) && setting[1]>=0,str(setting[0]," must be nonnegative."));
+	assert(is_bool(withSlidingGrip),"withSlidingGrip must be true or false.");
+	assert(is_bool(withNotch),"withNotch must be true or false.");
+	assert(is_num(wallThickness) && wallThickness>0 &&
+		   is_num(boxLength) && boxLength>2*wallThickness &&
+		   is_num(boxWidth) && boxWidth>2*wallThickness,
+		   "Box length and width must exceed twice the positive wall thickness.");
+	assert(is_num(cornerRadius) && cornerRadius>wallThickness+slidingFloorRadius &&
+		   2*cornerRadius<min(boxLength,boxWidth),
+		   "Sliding corner radius must exceed wallThickness + slidingFloorRadius and leave straight sides.");
+	assert(is_num(bottomThickness) && bottomThickness>0 && is_num(boxHeight),
+		   "bottomThickness must be positive and boxHeight must be numeric.");
+	assert(wallThickness-slidingRimInset()>=0.8-0.000001,
+		   "Sliding rim must retain 0.8 mm of wall; increase wallThickness or reduce slidingSkirtThickness/lidClearance.");
+	assert(slidingSkirtThickness-slidingRailDepth-slidingGripDepth()>=0.8-0.000001,
+		   "Sliding groove must retain 0.8 mm of skin, including grip ribs; increase slidingSkirtThickness or reduce slidingRailDepth.");
+	assert(slidingRailDepth>lidClearance/2,
+		   "slidingRailDepth must exceed lidClearance/2 to capture the lid.");
+	assert(slidingEdgeChamfer<min(bottomThickness,lidThickness,slidingSkirtThickness),
+		   "slidingEdgeChamfer must be smaller than the floor, lid plate, and skirt thicknesses.");
+	assert(slidingShoulder()>bottomThickness+slidingFloorRadius+internalClearance,
+		   "Sliding skirt shoulder must clear the rounded floor; increase boxHeight or reduce slidingSkirtDepth/slidingFloorRadius.");
+	assert(slidingSkirtDepth/3>=slidingRailDepth+slidingRailHalfFlat()+slidingVerticalClearance+0.801,
+		   "Sliding rail must retain 0.8 mm below the plate; increase slidingSkirtDepth or reduce rail depth/vertical clearance.");
+	assert(2*slidingSkirtDepth/3>=slidingRailDepth+slidingRailHalfFlat()+slidingVerticalClearance+
+		   (withNotch ? 1.5 : 0)+0.801,
+		   "Sliding groove must retain 0.8 mm above the skirt tip/recess; increase slidingSkirtDepth or reduce rail depth/vertical clearance.");
+	if (dividerCountX>0 || dividerCountY>0)
+		assert(is_num(dividerHeight) && dividerHeight<=slidingDividerTop()-bottomThickness,
+			   str("dividerHeight must not exceed ",slidingDividerTop()-bottomThickness,
+				   " mm above the interior floor; leave clearance beneath the sliding plate."));
+	if (pullLedges!="none")
+		assert(is_num(pullTopOffset) && pullTopOffset>=lidThickness+internalClearance,
+			   "pullTopOffset must clear the sliding plate: lidThickness + internalClearance.");
+	children();
+}
+
+module slidingPrintPlacement(){
+	translate([0,-boxWidth-2*wallThickness,0]) children();
+}
+
+// Apply to print-layout lid geometry; positive travel opens toward X=boxLength.
+module slidingAssemblyPlacement(travel=0){
+	translate([travel,-2*wallThickness,boxHeight])
+	rotate([180,0,0]) children();
+}
+
+module slidingOutline(inset=0,open=false){
+	left=open ? -boxLength : inset;
+	right=boxLength-inset;
+	r=cornerRadius-inset;
+	hull()
+		for (x=[left+r,right-r],y=[cornerRadius,boxWidth-cornerRadius])
+			translate([x,y]) circle(r=r,$fn=64);
+}
+
+module slidingSlice(z,inset,open=false){
+	translate([0,0,z]) linear_extrude(height=0.001) slidingOutline(inset,open);
+}
+
+module slidingOuter(height){
+	if (slidingEdgeChamfer>0)
+		hull(){
+			slidingSlice(0,slidingEdgeChamfer);
+			slidingSlice(slidingEdgeChamfer,0);
+		}
+	translate([0,0,slidingEdgeChamfer])
+	linear_extrude(height=height-slidingEdgeChamfer)
+	slidingOutline();
+}
+
+// Convex 45-degree bead; the same section, inverted, cuts the lid groove.
+module slidingRailEnvelope(center,inset,verticalGap=0,open=false){
+	halfFlat=slidingRailHalfFlat()+verticalGap;
+	// Center the thin hull slices so inversion preserves the same bevel heights.
+	hull(){
+		slidingSlice(center-halfFlat-slidingRailDepth-0.0005,inset,open);
+		slidingSlice(center-halfFlat-0.0005,inset-slidingRailDepth,open);
+		slidingSlice(center+halfFlat-0.0005,inset-slidingRailDepth,open);
+		slidingSlice(center+halfFlat+slidingRailDepth-0.0005,inset,open);
+	}
+}
+
+module slidingInterior(){
+	if (slidingFloorRadius>0)
+		hull()
+			for (a=[0:10:90])
+				slidingSlice(bottomThickness+slidingFloorRadius*(1-cos(a)),
+							 wallThickness+slidingFloorRadius*(1-sin(a)));
+	translate([0,0,bottomThickness+slidingFloorRadius])
+	linear_extrude(height=boxHeight)
+	slidingOutline(wallThickness);
+}
+
+module slidingGripCuts(low,high){
+	width=min(24,boxWidth-2*cornerRadius);
+	count=max(1,floor(width/2));
+	if (withSlidingGrip && high>low)
+		for (i=[0:count-1])
+			translate([boxLength,boxWidth/2+(i-(count-1)/2)*2,low])
+			cylinder(r=slidingGripDepth(),h=high-low,$fn=16);
+}
+
+module slidingBox(){
+	difference(){
+		union(){
+			difference(){
+				union(){
+					slidingOuter(slidingShoulder());
+					linear_extrude(height=slidingSeat()-slidingVerticalClearance)
+					slidingOutline(slidingRimInset());
+					intersection(){
+						translate([0,0,slidingShoulder()-0.01])
+						linear_extrude(height=slidingSkirtDepth+0.01)
+						slidingOutline();
+						cube([cornerRadius,boxWidth,boxHeight]);
+					}
+					slidingRailEnvelope(slidingRailCenter(),slidingRimInset());
+				}
+				slidingInterior();
+			}
+			intersection(){
+				// Tall dividers must not refill the external sliding channels.
+				linear_extrude(height=boxHeight) slidingOutline(slidingRimInset());
+				internalDivisions(l=boxLength,w=boxWidth,bt=bottomThickness,wt=wallThickness,
+								  r=cornerRadius,floorHeight=bottomThickness,topLimit=slidingDividerTop(),
+								  countX=dividerCountX,countY=dividerCountY,height=dividerHeight,
+								  thickness=dividerThickness,sizesX=compartmentSizesX,
+								  sizesY=compartmentSizesY,facets=64);
+			}
+			internalPullLedges(l=boxLength,w=boxWidth,h=boxHeight,bt=bottomThickness,
+							   wt=wallThickness,r=cornerRadius,
+							   placement=pullLedges,width=pullWidth,projection=pullProjection,
+							   thickness=pullThickness,topOffset=pullTopOffset,clearance=internalClearance);
+		}
+		slidingGripCuts(max(slidingEdgeChamfer+1,slidingShoulder()-12),slidingShoulder()-1);
+	}
+}
+
+module slidingLidBlank(){
+	difference(){
+		union(){
+			slidingOuter(lidThickness);
+			intersection(){
+				translate([0,0,lidThickness-0.01])
+				linear_extrude(height=slidingSkirtDepth+0.01) slidingOutline();
+				translate([cornerRadius+lidClearance/2,0,0])
+				cube([boxLength,boxWidth,lidThickness+slidingSkirtDepth]);
+			}
+		}
+		translate([0,0,lidThickness])
+		linear_extrude(height=slidingSkirtDepth+0.01)
+		slidingOutline(slidingSkirtThickness,open=true);
+		slidingRailEnvelope(lidThickness+slidingSkirtDepth/3,
+							slidingSkirtThickness,slidingVerticalClearance,open=true);
+		slidingGripCuts(slidingEdgeChamfer+0.5,lidThickness+slidingSkirtDepth-0.5);
+		if (withNotch)
+			translate([boxLength-3,boxWidth/2-5,lidThickness+slidingSkirtDepth-1.5])
+			round_cube(l=6,w=10,h=1.51,r=2,$fn=32);
+	}
+}
+
 module configuredBox(height=boxHeight,ledgeOffset=pullTopOffset,
-					 lidEnabled=withLid,stackable=withStacking,facets=30){
+					 stackable=withStacking,facets=30){
 	round_box(l=boxLength,
 			  w=boxWidth,
 			  h=height,
 			  bt=bottomThickness,
 			  wt=wallThickness,
-			  lt=lidThickness,
 			  r=cornerRadius,
-			  et=lidEdgeThickness,
-			  lidEnabled=lidEnabled,
 			  ledges=pullLedges,
 			  ledgeWidth=pullWidth,
 			  ledgeProjection=pullProjection,
@@ -508,7 +696,7 @@ module magneticBox(){
 	difference(){
 		union(){
 			configuredBox(height=seat,ledgeOffset=pullTopOffset-magneticLidThickness,
-						  lidEnabled=false,stackable=false,facets=64);
+						  stackable=false,facets=64);
 			magneticPads(top=seat);
 		}
 		// Subtract last so dividers or pull ledges cannot fill the blind pockets.
@@ -552,13 +740,13 @@ module magneticLid(){
 	lidInlays(magnetic=true);
 }
 
-module round_box(l=40,w=30,h=30,bt=2,wt=2,lt=2,r=5,et=0.5,
-				 lidEnabled=false,ledges="none",ledgeWidth=30,
+module round_box(l=40,w=30,h=30,bt=2,wt=2,r=5,
+				 ledges="none",ledgeWidth=30,
 				 ledgeProjection=6,ledgeThickness=3,ledgeTopOffset=8,
 				 stackable=false,stackDepth=3,stackClearance=0.25,
 				 divisionsX=0,divisionsY=0,divisionHeight=25,divisionThickness=1.2,
 				 sizesX=[],sizesY=[],clearance=0.5,facets=30){
-	stackEnabled=stackable && !lidEnabled;
+	stackEnabled=stackable;
 	baseHeight=stackEnabled ? stackDepth : 0;
 	baseInset=wt+stackClearance;
 	floorHeight=bt+baseHeight;
@@ -579,17 +767,11 @@ module round_box(l=40,w=30,h=30,bt=2,wt=2,lt=2,r=5,et=0.5,
 			assert(ledgeTopOffset>=stackDepth+clearance,
 				   "Pull top offset must clear the stacked base: stackingDepth + internalClearance.");
 	}
-	if (lidEnabled){
-		assert(lt>0 && h>bt+lt+wt,
-			   "The positive lid thickness and rails must fit above the box bottom.");
-		assert(et>=0 && et<=lt,"Lid edge thickness must be between zero and lid thickness.");
-	}
-
 	union(){
 		difference(){
 			union(){
 				translate([0,0,baseHeight])
-				round_cube(l=l,w=w,h=(lidEnabled ? h-lt : h)-baseHeight,r=r,$fn=facets);
+				round_cube(l=l,w=w,h=h-baseHeight,r=r,$fn=facets);
 				if (stackEnabled)
 					// Overlap the solid base with the floor above the seating shoulder.
 					translate([baseInset,baseInset,0])
@@ -599,19 +781,12 @@ module round_box(l=40,w=30,h=30,bt=2,wt=2,lt=2,r=5,et=0.5,
 			translate ([wt, wt, floorHeight])
 			round_cube(l=l-2*wt,w=w-2*wt,h=h,r=r-wt,$fn=facets);
 		}
-		if (lidEnabled){
-			roundBoxRim(l=l,w=w,h=h,et=et,r=r,wt=wt,lt=lt);
-			translate ([0, 0, -wt])
-			roundBoxRim(l=l,w=w,h=h,et=et,r=r,wt=wt,lt=lt);
-		}
-		internalPullLedges(l=l,w=w,h=h,bt=floorHeight,wt=wt,r=r,lt=lt,
-						   lidEnabled=lidEnabled,placement=ledges,
+		internalPullLedges(l=l,w=w,h=h,bt=floorHeight,wt=wt,r=r,placement=ledges,
 						   width=ledgeWidth,projection=ledgeProjection,
 						   thickness=ledgeThickness,topOffset=ledgeTopOffset,
 						   clearance=clearance);
 		internalDivisions(l=l,w=w,bt=bt,wt=wt,r=r,floorHeight=floorHeight,
-						  topLimit=lidEnabled ? h-lt-wt-clearance :
-								   (stackEnabled ? h-stackDepth-clearance : h),
+						  topLimit=stackEnabled ? h-stackDepth-clearance : h,
 						  countX=divisionsX,countY=divisionsY,
 						  height=divisionHeight,thickness=divisionThickness,
 						  sizesX=sizesX,sizesY=sizesY,facets=facets);
@@ -652,7 +827,7 @@ module internalDivisions(l,w,bt,wt,r,floorHeight,topLimit,
 			   "dividerHeight must be positive when divisions are enabled.");
 		assert(floorHeight+height<=topLimit,
 			   str("dividerHeight must not exceed ",topLimit-floorHeight,
-				   " mm above the interior floor; leave clearance for the lid rails or stacked base."));
+				   " mm above the interior floor; leave clearance for the lid or stacked base."));
 		overlap=min(0.05,bt/4);
 		translate([0,0,floorHeight-overlap])
 		intersection(){
@@ -670,7 +845,7 @@ module internalDivisions(l,w,bt,wt,r,floorHeight,topLimit,
 	}
 }
 
-module internalPullLedges(l,w,h,bt,wt,r,lt,lidEnabled,
+module internalPullLedges(l,w,h,bt,wt,r,
 						 placement,width,projection,thickness,topOffset,clearance){
 	assert(placement=="none" || placement=="start" ||
 		   placement=="end" || placement=="both",
@@ -684,10 +859,6 @@ module internalPullLedges(l,w,h,bt,wt,r,lt,lidEnabled,
 			   "Pull projection leaves no space between the ledge and the opposite side.");
 		assert(h-topOffset-thickness-projection-overlap>=bt+clearance,
 			   "Pull ledge underside must remain above the floor by internalClearance.");
-		if (lidEnabled)
-			assert(topOffset>=lt+wt+clearance,
-				   "Pull top offset must clear the lid rails: lidThickness + wallThickness + internalClearance.");
-
 		if (placement=="start" || placement=="both")
 			translate([wt,w/2,h-topOffset])
 			pullLedge(width,projection,thickness,overlap);
@@ -711,60 +882,6 @@ module pullLedge(width,projection,thickness,overlap){
 		translate([-overlap,-width/2,-totalHeight])
 		round_cube(l=projection+overlap,w=width,h=totalHeight+0.01,
 				   r=rounding,$fn=32);
-	}
-}
-
-module roundBoxRim(l=boxLength,
-				   w=boxWidth,
-				   h=boxHeight,
-				   et=lidEdgeThickness,
-				   r=cornerRadius,
-				   wt=wallThickness,
-				   lt=lidThickness){
-	difference() {
-		translate ([0, 0, h-lt])
-		round_cube(l=l,w=w,h=lt,r=r);
-		translate ([wt+lt,wt+lt-et*2,h-lt-0.1])
-		round_cube(l=l*2,w=w-2*(wt+lt)+4*et,h=lt+0.2,r=r-wt+lt);
-
-		//subtract out a lid to make the ledge
-		translate ([wt, w-wt, h-lt-0.1])
-		roundBoxLid(l=l*2,w=w-2*wt,h=lt+0.1,wt=wt,t=lt,et=0.5,r=r-wt,notch=false);
-	}
-}
-
-module roundBoxLid(l=40,w=30,h=3,wt=2,t=2,et=0.5,r=5,notch=true){
-	translate ([l, 0, 0])
-	rotate (a = [0, 0, 180])
-	difference(){
-		round_cube(l=l,w=w,h=h,r=r);
-
-		translate ([-1, 0, et]) rotate (a = [45, 0, 0])  cube (size = [l+2, h*2, h*2]);
-		translate ([-1, w, et]) rotate (a = [45, 0, 0])  cube (size = [l+2, h*2, h*2]);
-		translate ([l, -1, et]) rotate (a = [45, 0, 90]) cube (size = [w+2, h*2, h*2]);
-		if (notch==true){
-			translate([2,w/2,h+0.001]) thumbNotch(10/2,72,t);
-		}
-	}
-}
-
-module thumbNotch(
-	thumbR=12/2,
-	angle=72,
-	notchHeight=2){
-
-	size=10*thumbR;
-
-	rotate([0,0,90])
-	difference(){
-		translate([0,
-					(thumbR*sin(angle)-notchHeight)/tan(angle),
-					 thumbR*sin(angle)-notchHeight])
-		rotate([angle,0,0])
-		cylinder(r=thumbR,h=size,$fn=30);
-
-		translate([-size,-size,0])
-		cube(size*2);
 	}
 }
 
