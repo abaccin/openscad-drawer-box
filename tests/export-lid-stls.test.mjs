@@ -290,6 +290,9 @@ for (const style of ['sliding', 'magnetic']) {
       boxLength: 100, boxWidth: 95, boxHeight: 50, wallThickness: 2.5, bottomThickness: 2,
       cornerRadius: 5, dividerCountX: 0, dividerCountY: 0, compartmentSizesX: [], compartmentSizesY: [],
       pullLedges: 'none', withStacking: false, lidStyle: style, lidThickness: 2,
+      lidClearance: 0.2, withNotch: true, slidingSkirtDepth: 6, slidingSkirtThickness: 1.4,
+      slidingRailDepth: 0.4, slidingVerticalClearance: 0.2, slidingFloorRadius: 2,
+      slidingEdgeChamfer: 0.5, withSlidingGrip: true,
       magneticLidThickness: 5, magnetThickness: 3, magnetRecess: 0.1,
       withLidArtwork: true, lidArtworkFile: artwork, lidArtworkAspect: 1, lidArtworkDepth: 0.5,
       withLidLogo: true, lidLogoSize: 15, lidLogoDepth: 0.5,
@@ -332,10 +335,11 @@ for (const style of ['sliding', 'magnetic']) {
           assert.ok(partBounds[0][axis] >= bodyBounds[0][axis] - 0.001);
           assert.ok(partBounds[1][axis] <= bodyBounds[1][axis] + 0.001);
         }
-        assert.equal(partBounds[style === 'magnetic' ? 0 : 1][2], style === 'magnetic' ? 0 : 2);
+        assert.equal(partBounds[0][2], 0, 'Every inlay starts on the exterior print face');
+        assert.equal(partBounds[1][2], 0.5, 'Every inlay reaches its configured engraving depth');
       }
     }
-    assert.ok(bodyBounds[0][1] < 0, 'The lid must retain its negative-Y scene placement');
+    assert.deepEqual(bodyBounds, [[0, -100, 0], [100, -5, style === 'sliding' ? 8 : 7]]);
     assert.deepEqual(readFileSync(source), before);
     assertClean(f);
   });

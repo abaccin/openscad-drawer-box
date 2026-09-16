@@ -6,15 +6,16 @@ stacking, and optional sliding or magnetic lift-off lids with engraved robot
 artwork, a small personal AB logo, and optional custom-font text.
 The model uses millimeters and is compatible with OpenSCAD 2021.01.
 
-The default box is **160 x 95 x 50 mm** (outside length, width, height).
+The saved box is **100 x 95 x 50 mm** (outside length, width, closed height),
+with a sliding lid, 2.5 mm walls, five Y dividers, and logo/text engravings.
 With `withLid=false`, its rounded walls reach the full 50 mm height and end
 in a flat, slot-free rim: no sliding-lid rails or grooves are generated.
-With `withStacking=true` (the default), the bottom 3 mm steps inward to
+With `withStacking=true`, the bottom 3 mm steps inward to
 locate inside another lidless box. Its shoulder rests on the lower rim,
 keeping the boxes aligned without changing the outside dimensions.
 `pullLedges="both"` adds a ledge inside each short end wall.
-Divisions are off by default, preserving the open interior. Set
-`dividerCountX` and/or `dividerCountY` above zero to add them.
+For an open interior, set both divider counts to zero and both compartment
+size lists to `[]`. Stacking and pull ledges are off in the saved configuration.
 
 ## Files
 
@@ -30,6 +31,7 @@ Divisions are off by default, preserving the open interior. Set
 | `tests/export-lid-3mf.test.mjs` | Project packaging, palette assignments, and Bambu Studio compatibility checks. |
 | `tests/export-lid-stls.test.mjs` | Exporter CLI, failure handling, and real OpenSCAD alignment checks. |
 | `tests/model.test.mjs` | OpenSCAD rendering, geometry, and parameter regression checks using Node.js. |
+| `tests/sliding.test.mjs` | Sliding rim/skirt geometry, motion, retention, finishing details, and fit-limit checks. |
 
 No external OpenSCAD libraries are required. Each SVG is only needed when
 displaying or rendering a lid with its corresponding engraving enabled;
@@ -45,15 +47,16 @@ Text needs an installed font, not an SVG or an external OpenSCAD library.
    Customizer. Everything below `[Hidden]` is implementation, not settings.
    Set divider counts, height, thickness, and optional compartment sizes
    under **Internal divisions**. Press **F5** to preview after changes.
-3. For the default lidless box, leave `withLid=false` and select
-   `itemsShown="box"` or `"both"`. Leave `withStacking=true` for the locating
+3. For a lidless box, set `withLid=false` and select
+   `itemsShown="box"` or `"both"`. Set `withStacking=true` for the locating
    base, or set it to `false` to restore the original full-width flat base.
 4. For a sliding-lid box, set `withLid=true` and leave `lidStyle="sliding"`.
-   This restores the lid rails
-   and the separate sliding lid. With the default `withLidArtwork=true`,
-   the robot is engraved 0.5 mm into the lid's upper face, not raised.
-   `withLidLogo=true` also adds the small AB engraving opposite the thumb
-   notch; the robot automatically fits into the remaining space.
+   This generates an external rim and a separate, three-sided skirted lid
+   that slides over it. The lid prints exterior-face-down, skirt upward.
+   With `withLidArtwork=true`, the robot is engraved 0.5 mm into the
+   exterior face, not raised; robot artwork is disabled in the saved settings.
+   `withLidLogo=true` also adds the small AB engraving opposite the
+   opening-end finger recess; the robot automatically fits into the remaining space.
    `itemsShown="both"` lays the box and lid out beside one another.
 5. For a magnetic lift-off lid, set `withLid=true` and `lidStyle="magnetic"`.
    The box has a plain rim and four internal magnet pads instead of rails.
@@ -106,11 +109,11 @@ to change; geometry calculations remain below the settings.
 | Parameter | Default | Meaning |
 | --- | --- | --- |
 | `itemsShown` | `"both"` | Display `"box"`, `"lid"`, or `"both"`; lid visibility also requires `withLid=true`. |
-| `boxLength` | `160` | Outside length along X. |
+| `boxLength` | `100` | Outside length along X, including the closed sliding lid. |
 | `boxWidth` | `95` | Outside width along Y. |
-| `boxHeight` | `50` | Overall height including the seated lid when enabled; lidless walls retain this full height. Magnetic walls end at `boxHeight - magneticLidThickness`. |
+| `boxHeight` | `50` | Overall closed height including the lid; lidless walls retain this full height. Sliding rim height is `boxHeight - lidThickness - slidingVerticalClearance`; magnetic walls end at `boxHeight - magneticLidThickness`. |
 | `cornerRadius` | `5` | Outside corner radius in plan view. |
-| `wallThickness` | `1` | Side-wall thickness. |
+| `wallThickness` | `2.5` | Main side-wall thickness. Sliding mode reserves part of it for the inset rim and lid skirt. |
 | `bottomThickness` | `2` | Floor thickness above the base shoulder when stacking is enabled; otherwise measured from the build plate. |
 
 ### Internal divisions
@@ -118,11 +121,11 @@ to change; geometry calculations remain below the settings.
 | Parameter | Default | Meaning |
 | --- | --- | --- |
 | `dividerCountX` | `0` | Number of walls across the inside length, making `dividerCountX + 1` columns along X. |
-| `dividerCountY` | `0` | Number of walls across the inside width, making `dividerCountY + 1` rows along Y. |
+| `dividerCountY` | `5` | Number of walls across the inside width, making `dividerCountY + 1` rows along Y. |
 | `dividerHeight` | `25` | Wall height above the interior floor, shared by both directions. |
 | `dividerThickness` | `1.2` | Thickness of all divider walls, independent of the outside walls. |
 | `compartmentSizesX` | `[]` | Up to `dividerCountX` leading clear lengths, starting at X=0. Unspecified compartments share the remaining length equally; `[]` makes all equal. |
-| `compartmentSizesY` | `[]` | Up to `dividerCountY` leading clear widths, starting at Y=0. Unspecified compartments share the remaining width equally; `[]` makes all equal. |
+| `compartmentSizesY` | `[18]` | Up to `dividerCountY` leading clear widths, starting at Y=0. Unspecified compartments share the remaining width equally; `[]` makes all equal. |
 
 Counts describe **walls, not compartments**: `dividerCountX=2` and
 `dividerCountY=1` make a **3 by 2 grid (six compartments)**. Zero disables
@@ -150,7 +153,8 @@ With `K` supplied sizes, each unspecified compartment receives:
 
 If there is one supplied size per divider, only the final compartment is
 unspecified and it receives the entire remainder, as before.
-For example, with the default box dimensions:
+For example, with a **160 x 95 mm box and 1 mm walls** in lidless mode
+(these are example dimensions, not the saved sliding settings):
 
 ```scad
 dividerCountX=2;
@@ -165,7 +169,7 @@ This makes three columns of **40, 55, and 60.6 mm** and two rows of
 **30 and 61.8 mm**.
 
 For five dividers (six compartments), shorter lists work on either axis.
-Using the default box dimensions and thicknesses:
+Using the same **160 x 95 mm box, 1 mm walls, and 1.2 mm dividers**:
 
 | Divider setting | Size list | Clear compartment sizes (mm) |
 | --- | --- | --- |
@@ -189,7 +193,7 @@ stackable lidless boxes, otherwise at Z=`bottomThickness`. Its maximum is:
 | Configuration | Maximum `dividerHeight` | Default box |
 | --- | --- | --- |
 | Lidless, stacking enabled | `boxHeight - bottomThickness - 2*stackingDepth - internalClearance` | `41.5` |
-| Sliding lid enabled | `boxHeight - bottomThickness - lidThickness - wallThickness - internalClearance` | `44.5` |
+| Sliding lid enabled | `boxHeight - bottomThickness - lidThickness - internalClearance` | `45.5` |
 | Magnetic lid enabled | `boxHeight - bottomThickness - magneticLidThickness - magneticLidLocatorDepth - internalClearance` | `40.5` |
 | Lidless, stacking disabled | `boxHeight - bottomThickness` | `48` |
 
@@ -201,7 +205,7 @@ finger access, or set `pullLedges="none"` when the ledges are not needed.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `withStacking` | `true` | Add a stepped locating base when `withLid=false`. Ignored for either lid style. |
+| `withStacking` | `false` | Add a stepped locating base when `withLid=false`. Ignored for either lid style. |
 | `stackingDepth` | `3` | Height of the inset base and its insertion depth into the box below. |
 | `stackingClearance` | `0.25` | Per-side gap between the locating base and the lower box's inner wall. |
 
@@ -228,16 +232,83 @@ the locating fit is intended only for the lidless configuration.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `withLid` | `false` | Enable the selected lid and its matching box geometry. |
+| `withLid` | `true` | Enable the selected lid and its matching box geometry. |
 | `lidStyle` | `"sliding"` | `"sliding"` or `"magnetic"`; geometry selection only takes effect with `withLid=true`. |
-| `lidThickness` | `2` | Sliding lid thickness; ignored by magnetic lids. |
-| `lidClearance` | `0.2` | Total reduction in sliding lid width, not a per-side clearance; ignored by magnetic lids. |
-| `lidEdgeThickness` | `0.5` | Thickness at the sliding lid's beveled edges; ignored by magnetic lids. |
-| `withNotch` | `true` | Sliding thumb notch, or an underside finger recess at the magnetic lid's X=`boxLength` edge. |
+| `lidThickness` | `2` | Sliding plate thickness, excluding the skirt; ignored by magnetic lids. |
+| `lidClearance` | `0.2` | Total lateral fit allowance between sliding rim and skirt: 0.1 mm per opposing side by default. Does not shrink the outside lid footprint. |
+| `withNotch` | `true` | Finger recess in the sliding skirt's lower edge, or an underside finger recess in the magnetic lid, at X=`boxLength`. |
 
-The generated **sliding** lid length is `boxLength - wallThickness`; its width is
-`boxWidth - 2*wallThickness - lidClearance`. Adjust fit experimentally:
-`lidClearance` is a width adjustment, not an all-around tolerance.
+### Sliding lid
+
+The lid is a shallow, rounded plate with a **three-sided skirt**: two long
+sides and the X=`boxLength` end. Grooves inside the skirt capture a matching
+external bead on the box's inset upper rim. The skirt is open toward X=0;
+the full-width rear wall stops the lid in its closed position. Slide the lid
+off toward **positive X**, rather than lifting it or snapping it over the rim.
+Both parts have localized recessed grip ribs at the opening end.
+
+**This replaces the old flat plate and internal rails. Print a new matching
+box and lid together; neither part fits the old sliding design.**
+`lidEdgeThickness` is retained only as an ignored legacy setting, hidden from
+the Customizer. Magnetic and lidless designs are unchanged.
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `slidingSkirtDepth` | `6` | Skirt depth below the plate when closed. |
+| `slidingSkirtThickness` | `1.4` | Skirt wall before cutting the internal groove. |
+| `slidingRailDepth` | `0.4` | Outward bead projection and matching groove depth. |
+| `slidingVerticalClearance` | `0.2` | Vertical fit gap at the plate, shoulder, and groove faces. Independent of lateral fit. |
+| `slidingFloorRadius` | `2` | Interior floor-to-wall fillet radius. `0` disables it. |
+| `slidingEdgeChamfer` | `0.5` | Chamfer around the box base and exterior lid perimeter. `0` disables it. |
+| `withSlidingGrip` | `true` | Recessed, 0.2 mm deep grip ribs within the outside footprint. |
+
+The closed design envelope is `boxLength x boxWidth x boxHeight`, including
+the lid and its vertical fit allowance. The rim ends at
+`boxHeight - lidThickness - slidingVerticalClearance`. The lower shell's
+shoulder is at
+`boxHeight - lidThickness - slidingSkirtDepth - slidingVerticalClearance`.
+With the saved values these heights are **47.8 mm and 41.8 mm** respectively.
+The face-down lid is **8 mm** high, with its exterior at Z=0 and skirt upward.
+The floor remains `bottomThickness` above the bed; fillets add material around
+its perimeter without thinning it. Clear compartment dimensions apply above
+the curved floor transitions.
+
+The inset rim reserves `slidingSkirtThickness + lidClearance/2` from the
+outside wall. At least **0.8 mm** must remain in that rim, and at least
+**0.8 mm** must remain behind the lid groove including any grip cuts.
+For the default skirt and lateral fit, `wallThickness` must be at least
+**2.3 mm**; historical 1 mm sliding walls are no longer suitable.
+`slidingRailDepth` must exceed `lidClearance/2` to retain the lid.
+The corner radius must exceed `wallThickness + slidingFloorRadius` and
+leave straight side sections. Assertions explain configurations that cannot
+fit their rail, skirt, chamfer, floor, dividers, or ledges.
+
+For a small, reference-like open box, use these overrides while retaining the
+sliding defaults above (the example does not replace the saved configuration):
+
+```scad
+withLid=true;
+lidStyle="sliding";
+boxLength=76.8;
+boxWidth=56.8;
+boxHeight=19;
+cornerRadius=8;
+wallThickness=3.4;
+dividerCountX=0;
+dividerCountY=0;
+compartmentSizesX=[];
+compartmentSizesY=[];
+pullLedges="none";
+withLidArtwork=false;
+withLidLogo=false;
+withLidText=false;
+```
+
+Print a small pair first and adjust `lidClearance` and
+`slidingVerticalClearance` for your printer. The 45-degree bead/groove ramps
+and face-down lid are intended to minimize unsupported overhangs, but digital
+clearance checks do not establish printed friction or guarantee support-free
+printing on every machine.
 Existing configurations that only set `withLid=true` still select this style.
 
 ### Magnetic lid
@@ -340,7 +411,7 @@ children and pets: swallowed magnets can cause serious injury.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `pullLedges` | `"both"` | `"none"`, `"start"`, `"end"`, or `"both"`. |
+| `pullLedges` | `"none"` | `"none"`, `"start"`, `"end"`, or `"both"`. |
 | `pullWidth` | `30` | Ledge width along the short wall, centered across Y. |
 | `pullProjection` | `6` | Inward projection from the inner wall face. |
 | `pullThickness` | `3` | Thickness at the projecting edge, above the sloped underside. |
@@ -362,9 +433,9 @@ load-capacity guarantee.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `withLidArtwork` | `true` | Engrave the SVG when a lid is generated. |
+| `withLidArtwork` | `false` | Engrave the SVG when a lid is generated. |
 | `lidArtworkFile` | `"robot-relief.svg"` | SVG import path, relative to the SCAD file. |
-| `lidArtworkDepth` | `0.5` | Engraving depth below the lid's upper face. |
+| `lidArtworkDepth` | `0.5` | Engraving depth below the lid's exterior face, which faces the bed when printing. |
 | `lidArtworkMargin` | `8` | Artwork margin used when fitting the rotated image to the lid. |
 | `lidArtworkLineGrowth` | `0.2` | Expand each side of the linework to improve fine-feature printability. |
 | `lidArtworkAspect` | `939/453` | Width/height ratio after rotating the SVG 90 degrees. Change this for replacement artwork with different proportions. |
@@ -382,13 +453,13 @@ and logo restores the original robot layout.
 | --- | --- | --- |
 | `withLidLogo` | `true` | Engrave the personal AB logo when a lid is generated; independent of `withLidArtwork`. |
 | `lidLogoFile` | `"ab-logo-monochrome.svg"` | SVG path relative to the SCAD file. |
-| `lidLogoSize` | `12` | Width and height of the square logo in millimeters. Replacement artwork is fitted to this square. |
+| `lidLogoSize` | `25` | Width and height of the square logo in millimeters. Replacement artwork is fitted to this square. |
 | `lidLogoDepth` | `0.5` | Engraving depth below the lid surface, not a raised badge. |
 | `lidLogoMargin` | `4` | Margin around the logo strip, including the distance from the short edge. |
 
 The small logo is centered across the lid near X=0, opposite the sliding
-thumb notch or magnetic finger recess. The reserved strip is `lidLogoSize + 2*lidLogoMargin`
-long (20 mm by default). The logo works without the robot and is only
+skirt recess or magnetic finger recess. The reserved strip is `lidLogoSize + 2*lidLogoMargin`
+long (33 mm by default). The logo works without the robot and is only
 imported when a lid is displayed. The supplied SVG retains its cutout
 letters and transparent background.
 
@@ -411,8 +482,8 @@ lidTextSize=8;
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `withLidText` | `false` | Enable the engraved label and reserve its band. |
-| `lidText` | `"My box"` | Nonempty single-line text; no tabs or line breaks. |
+| `withLidText` | `true` | Enable the engraved label and reserve its band. |
+| `lidText` | `"         Manual Drill"` | Nonempty single-line text; the saved label includes nine leading spaces. No tabs or line breaks. |
 | `lidTextFont` | `"Liberation Sans:style=Bold"` | Installed font family and optional style in OpenSCAD's font-name syntax. |
 | `lidTextSize` | `8` | OpenSCAD nominal text size in mm; keeps the font's natural proportions. |
 | `lidTextDepth` | `0.5` | Engraving depth; magnetic pocket/skin limits also apply. |
@@ -425,7 +496,7 @@ By default, the label is centered on the active lid in both X and Y. Set
 `lidTextPositionX` and `lidTextPositionY` to numeric millimeter coordinates
 to place the label center explicitly. Coordinates are measured from the
 lid's X=0/Y=0 outer corner before the model applies its display translation
-or magnetic-lid rotation:
+or face-down print rotation:
 
 ```scad
 // Center the label at X=80 mm, Y=25 mm from the lid's X=0/Y=0 edges.
@@ -465,11 +536,11 @@ multi-material / multi-extrusion slicing (inspired by the Hackaday article
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `boxColor` | `"SteelBlue"` | Box display color (name, hex `"#RRGGBB"`, or `[r, g, b]` vector). |
-| `lidColor` | `"LightSlateGray"` | Lid body display color. |
-| `robotColor` | `"Gold"` | Robot inlay display color. |
-| `logoColor` | `"White"` | Personal AB logo inlay display color. |
-| `textColor` | `"OrangeRed"` | Lid label inlay display color. |
+| `boxColor` | `"white"` | Box display color (name, hex `"#RRGGBB"`, or `[r, g, b]` vector). |
+| `lidColor` | `"white"` | Lid body display color. |
+| `robotColor` | `"black"` | Robot inlay display color. |
+| `logoColor` | `"black"` | Personal AB logo inlay display color. |
+| `textColor` | `"green"` | Lid label inlay display color. |
 | `withColorInlay` | `false` | When `false`, decorations are recessed single-material engravings. When `true`, decorations generate flush solid inlays in lid cavities for multi-color printing. |
 | `colorShown` | `"all"` | Multi-material part filter: `"all"`, `"box"`, `"lid"`, `"robot"`, `"logo"`, or `"text"`. |
 
@@ -496,7 +567,7 @@ Lid components still require `withLid=true`; inlays also require
 and explain which flag to enable in the console.
 
 The original engraving depths set the inlay thicknesses. Inlays are clipped
-to the lid outline, bevels, and notch, keeping its external dimensions
+to the actual lid outline, chamfers, and recesses, keeping its external dimensions
 unchanged. Where decorations overlap, **text takes priority over logo,
 then robot**; their exported volumes do not overlap. Out-of-bounds text is
 clipped, not fitted. Check placement and layer thickness in your slicer.
@@ -658,9 +729,10 @@ assign filaments, or generate a 3MF. STL contains geometry only.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `internalClearance` | `0.5` | Positive minimum gap beneath an inserted stacking base, lid rails, or magnetic lip, and beneath pull ledges/pads. Also keeps logo/text margins clear of the sliding bevel or magnetic edge. |
+| `internalClearance` | `0.5` | Positive minimum gap beneath an inserted stacking base, sliding plate, or magnetic lip, and beneath pull ledges/pads. Also keeps logo/text margins clear of the lid edge. |
 
-This is separate from the sliding width fit (`lidClearance`) and stacking
+This is separate from the sliding lateral/vertical fit (`lidClearance`,
+`slidingVerticalClearance`) and stacking
 side fit (`stackingClearance`), as well as magnetic lip fit
 (`magneticLidClearance`) and pocket fit (`magnetPocketClearance`).
 
@@ -676,8 +748,9 @@ raised floor by at least `internalClearance` (default 0.5 mm):
 `boxHeight >= bottomThickness + 2*stackingDepth + internalClearance`.
 Pull ledges must be at least
 `stackingDepth + internalClearance` below the rim so the upper box's base clears them.
-With a sliding lid enabled, the lid and rails must fit above the floor, and
-`lidEdgeThickness` must be between zero and `lidThickness`.
+With a sliding lid enabled, the inset rim, grooved skirt, and floor transitions
+must satisfy the skin and clearance limits in [Sliding lid](#sliding-lid).
+The legacy `lidEdgeThickness` value is ignored.
 Magnetic lids instead validate the pocket walls, residual skin, corner-pad
 layout, lip clearance/thickness, and pad/lip depth above the floor, as described in
 [Magnetic lid](#magnetic-lid). Invalid settings are rejected, not silently
@@ -688,7 +761,7 @@ offset. Their width must fit between the rounded end-wall corners. Their
 combined projection must leave internal space, and their undersides must
 remain at least `internalClearance` above the floor. With a sliding lid enabled,
 `pullTopOffset` must be at least
-`lidThickness + wallThickness + internalClearance` to clear the rails.
+`lidThickness + internalClearance` to clear the sliding plate.
 For a magnetic lid, the minimum is
 `magneticLidThickness + magneticLidLocatorDepth + internalClearance`.
 For stackable boxes, the underside clearance is measured from the raised
@@ -708,16 +781,17 @@ recess. Robot margins and line growth must be nonnegative, its
 aspect ratio positive, and its allocated area large enough for its margins.
 The logo size must be positive, and its size plus twice its margin must
 be smaller than both lid dimensions. Its margin must be at least
-`lidThickness - lidEdgeThickness + internalClearance` to clear the bevel.
+`slidingEdgeChamfer + internalClearance` to clear the sliding plate's chamfer.
 For the flat magnetic lid, `lidLogoMargin >= internalClearance` suffices.
 Source assertions catch these constraints, but do not
 replace checking the rendered geometry, finger access, and printed fit.
 
 ## Printing and fit
 
-Start with the box floor on the build plate. Print sliding lids flat with
-the engraved face upward. Magnetic lids are displayed exterior-face-down,
-with pockets and the lip upward; see their engraving and assembly guidance
+Start with the box floor on the build plate. Both lid styles are displayed
+**exterior-face-down**, with engraving and color inlays at the bed. Sliding
+lids have their skirt upward; magnetic lids have their pockets and lip
+upward. See their engraving and assembly guidance
 above. Inspect both parts in your slicer before printing. Either lid is
 displayed at negative Y in OpenSCAD; center each complete box or assembled
 lid on the build plate as needed, never its individual colored inlays.
@@ -726,12 +800,12 @@ The sloped ledge and magnetic-pad undersides are intended to ease printing,
 but those features and the narrow overhang at the stacking shoulder may still need supports
 depending on the printer, material, cooling,
 orientation, and slicer settings. Do not assume support-free printing.
-Check that the default 1 mm walls and fine engraved lines are resolved
+Check that the 2.5 mm main walls, thinner rail/groove skins, and fine engraved lines are resolved
 well by your nozzle and chosen extrusion widths.
 
 Sliding fit depends on calibration, shrinkage, first-layer expansion, and
 surface finish. Try a small fit sample before a full print and tune
-`lidClearance` as necessary. The engraving leaves
+`lidClearance` and `slidingVerticalClearance` as necessary. The engraving leaves
 `lidThickness - lidArtworkDepth` of material beneath it (1.5 mm by default).
 For lidless stacking, tune `stackingClearance` instead; it is a per-side
 clearance, so increasing it by 0.1 mm reduces base length and width by
@@ -739,7 +813,7 @@ clearance, so increasing it by 0.1 mm reduces base length and width by
 before making a taller stack, and keep stacks low and stable.
 Choose adequate perimeters, floor layers, and material for your use.
 Dividers grow vertically from the floor; check that their thickness is
-resolved by your extrusion width. The 12 mm logo has fine lines and small
+resolved by your extrusion width. The 25 mm logo has fine lines and small
 letter cutouts; enlarge `lidLogoSize` if your nozzle cannot resolve them.
 On a sliding lid, its engraving leaves `lidThickness - lidLogoDepth`
 material beneath it. Magnetic lids additionally account for pocket depth
@@ -753,6 +827,7 @@ With Node.js 18 or later and OpenSCAD 2021.01 or later installed, run:
 ```powershell
 $env:OPENSCAD='C:\Program Files\OpenSCAD\openscad.exe'
 node --test tests\model.test.mjs
+node --test tests\sliding.test.mjs
 ```
 
 On systems where `openscad` is on PATH, `OPENSCAD` can be omitted.
@@ -778,6 +853,10 @@ colors, assignments, and relative part positions survive. Elsewhere, set
 that compatibility check is explicitly skipped when Bambu Studio is unavailable.
 Project round-trip compatibility was checked with Bambu Studio 2.8.2.
 
+The sliding suite checks three size/fit configurations, collision-free insertion
+through the rounded entry, vertical capture, the closure stop, tall dividers
+and ledges, grip/fillet/chamfer geometry, and invalid fit assertions.
+Both model suites share the same watertightness and point-containment checks.
 Model checks verify exact divider positions and clear sizes for empty, partial, and
 full size lists on both axes. They also render STL meshes for grid (including
 partially specified X/Y grids), height, sliding/magnetic lid, and decoration
