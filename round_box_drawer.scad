@@ -27,7 +27,7 @@ colorShown="all"; // [all,box,lid,robot,logo,text]
 /* [Box] */
 // Outside length along X; must exceed twice wallThickness.
 boxLength=100;
-// Outside width along Y; must exceed twice wallThickness.
+// Nominal width along Y, excluding raised sliding grips; must exceed twice wallThickness.
 boxWidth=95;
 // Overall outside height, including the lid when enabled or the inset stacking base.
 boxHeight=50;
@@ -85,8 +85,15 @@ slidingVerticalClearance=0.2;
 slidingFloorRadius=2;
 // Chamfer on the box base and exterior lid perimeter. 0 disables it.
 slidingEdgeChamfer=0.5;
-// Recessed grip ribs on the opening end of the box and lid, within the footprint.
+// Raised grip ribs on both sides parallel to sliding, near the opening end.
 withSlidingGrip=true;
+// Outward grip projection per side; adds twice this value to the overall width.
+slidingGripProjection=0.8;
+// Snap closed with integral flexible skirt tabs; pull the lid to release.
+// Face-down printing needs local supports under the free tab tips; clear the slots.
+withSlidingLock=true;
+// Elastic deflection beyond the lateral fit gap. Tune with a small matching print.
+slidingLockInterference=0.2;
 
 /* [Magnetic lid] */
 // Full plate thickness, excluding the inset lip. Requires room for pockets and engraving.
@@ -387,7 +394,20 @@ function slidingSeat()=boxHeight-lidThickness;
 function slidingShoulder()=slidingSeat()-slidingSkirtDepth-slidingVerticalClearance;
 function slidingRailCenter()=slidingSeat()-slidingSkirtDepth/3;
 function slidingRailHalfFlat()=slidingRailDepth/2;
-function slidingGripDepth()=withSlidingGrip ? 0.2 : 0;
+function slidingGripExtent()=withSlidingGrip ? slidingGripProjection : 0;
+function slidingLayoutGap()=max(2*wallThickness,2*slidingGripExtent()+2);
+function slidingOpenX()=cornerRadius+lidClearance/2;
+function slidingLockX()=slidingOpenX()+3;
+function slidingLockRootX()=slidingOpenX()+16;
+function slidingLockSlotZ()=lidThickness+2*slidingSkirtDepth/3;
+function slidingLockTabHeight()=slidingSkirtDepth/3-0.3;
+function slidingLockPrintZ()=lidThickness+slidingSkirtDepth-slidingLockTabHeight()/2;
+function slidingLockProjection()=lidClearance/2+slidingLockInterference;
+function slidingLockHalfHeight()=slidingLockTabHeight()/2-0.35;
+function slidingGripEndX()=boxLength-cornerRadius-1;
+function slidingGripSpan()=min(24,slidingGripEndX()-
+	max(slidingOpenX()+1,withSlidingLock ? slidingLockRootX()+2 : 0));
+function slidingBoxGripLow()=max(slidingEdgeChamfer+1,slidingShoulder()-12);
 function slidingDividerTop()=slidingSeat()-internalClearance;
 
 module slidingChecks(){
@@ -401,6 +421,7 @@ module slidingChecks(){
 				  ["slidingEdgeChamfer",slidingEdgeChamfer]])
 		assert(is_num(setting[1]) && setting[1]>=0,str(setting[0]," must be nonnegative."));
 	assert(is_bool(withSlidingGrip),"withSlidingGrip must be true or false.");
+	assert(is_bool(withSlidingLock),"withSlidingLock must be true or false.");
 	assert(is_bool(withNotch),"withNotch must be true or false.");
 	assert(is_num(wallThickness) && wallThickness>0 &&
 		   is_num(boxLength) && boxLength>2*wallThickness &&
@@ -413,8 +434,8 @@ module slidingChecks(){
 		   "bottomThickness must be positive and boxHeight must be numeric.");
 	assert(wallThickness-slidingRimInset()>=0.8-0.000001,
 		   "Sliding rim must retain 0.8 mm of wall; increase wallThickness or reduce slidingSkirtThickness/lidClearance.");
-	assert(slidingSkirtThickness-slidingRailDepth-slidingGripDepth()>=0.8-0.000001,
-		   "Sliding groove must retain 0.8 mm of skin, including grip ribs; increase slidingSkirtThickness or reduce slidingRailDepth.");
+	assert(slidingSkirtThickness-slidingRailDepth>=0.8-0.000001,
+		   "Sliding groove must retain 0.8 mm of skin; increase slidingSkirtThickness or reduce slidingRailDepth.");
 	assert(slidingRailDepth>lidClearance/2,
 		   "slidingRailDepth must exceed lidClearance/2 to capture the lid.");
 	assert(slidingEdgeChamfer<min(bottomThickness,lidThickness,slidingSkirtThickness),
@@ -426,6 +447,31 @@ module slidingChecks(){
 	assert(2*slidingSkirtDepth/3>=slidingRailDepth+slidingRailHalfFlat()+slidingVerticalClearance+
 		   (withNotch ? 1.5 : 0)+0.801,
 		   "Sliding groove must retain 0.8 mm above the skirt tip/recess; increase slidingSkirtDepth or reduce rail depth/vertical clearance.");
+	if (withSlidingGrip){
+		assert(is_num(slidingGripProjection) && slidingGripProjection>0,
+			   "slidingGripProjection must be positive when withSlidingGrip=true.");
+		assert(slidingGripSpan()>=1.2,
+			   "Sliding grips need 1.2 mm of straight side beyond the lock; increase boxLength or disable the grips/lock.");
+		assert(2*slidingGripProjection+0.4<=
+			   min(slidingSkirtDepth-0.5,slidingShoulder()-1-slidingBoxGripLow()),
+			   "Sliding grip ramps need more height; reduce slidingGripProjection or increase skirt depth/box height.");
+	}
+	if (withSlidingLock){
+		assert(is_num(slidingLockInterference) && slidingLockInterference>0,
+			   "slidingLockInterference must be positive when withSlidingLock=true.");
+		assert(slidingLockRootX()+4<=boxLength-cornerRadius,
+			   "Sliding lock needs a 16 mm spring and 4 mm root before the end corner; increase boxLength or disable the lock.");
+		assert(slidingLockSlotZ()-0.3-
+			   (lidThickness+slidingSkirtDepth/3+1.5*slidingRailDepth+slidingVerticalClearance)>=0.8-0.000001,
+			   "Sliding lock slot must clear the groove by 0.8 mm; increase slidingSkirtDepth or reduce rail depth/vertical clearance.");
+		assert(slidingLockHalfHeight()>=slidingLockProjection()+0.1,
+			   "Sliding lock bump ramps need more tab height; increase slidingSkirtDepth or reduce lidClearance/slidingLockInterference.");
+		assert(slidingSkirtThickness-slidingLockInterference-0.15>=0.8-0.000001,
+			   "Sliding lock pocket must retain 0.8 mm of skin; increase slidingSkirtThickness or reduce slidingLockInterference.");
+		assert(3*slidingSkirtThickness*slidingLockInterference/
+			   (2*pow(slidingLockRootX()-slidingLockX(),2))<=0.005,
+			   "Sliding lock deflection exceeds the conservative spring strain limit; reduce slidingLockInterference or slidingSkirtThickness.");
+	}
 	if (dividerCountX>0 || dividerCountY>0)
 		assert(is_num(dividerHeight) && dividerHeight<=slidingDividerTop()-bottomThickness,
 			   str("dividerHeight must not exceed ",slidingDividerTop()-bottomThickness,
@@ -437,12 +483,12 @@ module slidingChecks(){
 }
 
 module slidingPrintPlacement(){
-	translate([0,-boxWidth-2*wallThickness,0]) children();
+	translate([0,-boxWidth-slidingLayoutGap(),0]) children();
 }
 
 // Apply to print-layout lid geometry; positive travel opens toward X=boxLength.
 module slidingAssemblyPlacement(travel=0){
-	translate([travel,-2*wallThickness,boxHeight])
+	translate([travel,-slidingLayoutGap(),boxHeight])
 	rotate([180,0,0]) children();
 }
 
@@ -493,48 +539,90 @@ module slidingInterior(){
 	slidingOutline(wallThickness);
 }
 
-module slidingGripCuts(low,high){
-	width=min(24,boxWidth-2*cornerRadius);
-	count=max(1,floor(width/2));
-	if (withSlidingGrip && high>low)
+module slidingSides(){
+	for (side=[0,1])
+		translate([0,side*boxWidth,0])
+		scale([1,side==0 ? 1 : -1,1]) children();
+}
+
+module slidingGrips(low,high){
+	count=floor((slidingGripSpan()-1.2)/3)+1;
+	if (withSlidingGrip)
+		slidingSides()
 		for (i=[0:count-1])
-			translate([boxLength,boxWidth/2+(i-(count-1)/2)*2,low])
-			cylinder(r=slidingGripDepth(),h=high-low,$fn=16);
+			translate([slidingGripEndX()-0.6-i*3,0,low])
+			hull(){
+				translate([-0.6,0,0]) cube([1.2,0.1,high-low]);
+				translate([-0.6,-slidingGripProjection,slidingGripProjection])
+				cube([1.2,slidingGripProjection+0.1,high-low-2*slidingGripProjection]);
+			}
+}
+
+// Positive Y is into the wall. Enlarging the same profile gives seated clearance.
+module slidingLockShape(clearance=0){
+	p=slidingLockProjection();
+	h=slidingLockHalfHeight();
+	tipHalfWidth=1.5-min(p,1);
+	hull(){
+		translate([-1.5-clearance,-clearance,-h-clearance])
+		cube([3+2*clearance,0.02+2*clearance,2*(h+clearance)]);
+		translate([-tipHalfWidth-clearance,-p-clearance,-h+p-clearance])
+		cube([2*(tipHalfWidth+clearance),0.02+2*clearance,2*(h-p+clearance)]);
+	}
+}
+
+module slidingLockBumps(){
+	if (withSlidingLock)
+		slidingSides()
+		translate([slidingLockX(),slidingRimInset(),boxHeight-slidingLockPrintZ()])
+		slidingLockShape();
+}
+
+module slidingLockCuts(){
+	if (withSlidingLock)
+		slidingSides(){
+			translate([slidingLockX(),slidingRimInset(),slidingLockPrintZ()])
+			slidingLockShape(clearance=0.15);
+			hull()
+				for (x=[slidingOpenX()-0.3,slidingLockRootX()-0.3])
+					translate([x,slidingSkirtThickness/2,slidingLockSlotZ()])
+					rotate([90,0,0])
+					cylinder(r=0.3,h=slidingSkirtThickness+0.2,center=true,$fn=24);
+		}
 }
 
 module slidingBox(){
-	difference(){
-		union(){
-			difference(){
-				union(){
-					slidingOuter(slidingShoulder());
-					linear_extrude(height=slidingSeat()-slidingVerticalClearance)
-					slidingOutline(slidingRimInset());
-					intersection(){
-						translate([0,0,slidingShoulder()-0.01])
-						linear_extrude(height=slidingSkirtDepth+0.01)
-						slidingOutline();
-						cube([cornerRadius,boxWidth,boxHeight]);
-					}
-					slidingRailEnvelope(slidingRailCenter(),slidingRimInset());
+	union(){
+		difference(){
+			union(){
+				slidingOuter(slidingShoulder());
+				linear_extrude(height=slidingSeat()-slidingVerticalClearance)
+				slidingOutline(slidingRimInset());
+				intersection(){
+					translate([0,0,slidingShoulder()-0.01])
+					linear_extrude(height=slidingSkirtDepth+0.01)
+					slidingOutline();
+					cube([cornerRadius,boxWidth,boxHeight]);
 				}
-				slidingInterior();
+				slidingRailEnvelope(slidingRailCenter(),slidingRimInset());
+				slidingLockBumps();
 			}
-			intersection(){
-				// Tall dividers must not refill the external sliding channels.
-				linear_extrude(height=boxHeight) slidingOutline(slidingRimInset());
-				internalDivisions(l=boxLength,w=boxWidth,bt=bottomThickness,wt=wallThickness,
-								  r=cornerRadius,floorHeight=bottomThickness,topLimit=slidingDividerTop(),
-								  countX=dividerCountX,countY=dividerCountY,height=dividerHeight,
-								  thickness=dividerThickness,sizesX=compartmentSizesX,
-								  sizesY=compartmentSizesY,facets=64);
-			}
-			internalPullLedges(l=boxLength,w=boxWidth,h=boxHeight,bt=bottomThickness,
-							   wt=wallThickness,r=cornerRadius,
-							   placement=pullLedges,width=pullWidth,projection=pullProjection,
-							   thickness=pullThickness,topOffset=pullTopOffset,clearance=internalClearance);
+			slidingInterior();
 		}
-		slidingGripCuts(max(slidingEdgeChamfer+1,slidingShoulder()-12),slidingShoulder()-1);
+		intersection(){
+			// Tall dividers must not refill the external sliding channels.
+			linear_extrude(height=boxHeight) slidingOutline(slidingRimInset());
+			internalDivisions(l=boxLength,w=boxWidth,bt=bottomThickness,wt=wallThickness,
+							  r=cornerRadius,floorHeight=bottomThickness,topLimit=slidingDividerTop(),
+							  countX=dividerCountX,countY=dividerCountY,height=dividerHeight,
+							  thickness=dividerThickness,sizesX=compartmentSizesX,
+							  sizesY=compartmentSizesY,facets=64);
+		}
+		internalPullLedges(l=boxLength,w=boxWidth,h=boxHeight,bt=bottomThickness,
+						   wt=wallThickness,r=cornerRadius,
+						   placement=pullLedges,width=pullWidth,projection=pullProjection,
+						   thickness=pullThickness,topOffset=pullTopOffset,clearance=internalClearance);
+		slidingGrips(slidingBoxGripLow(),slidingShoulder()-1);
 	}
 }
 
@@ -545,16 +633,17 @@ module slidingLidBlank(){
 			intersection(){
 				translate([0,0,lidThickness-0.01])
 				linear_extrude(height=slidingSkirtDepth+0.01) slidingOutline();
-				translate([cornerRadius+lidClearance/2,0,0])
+				translate([slidingOpenX(),0,0])
 				cube([boxLength,boxWidth,lidThickness+slidingSkirtDepth]);
 			}
+			slidingGrips(lidThickness,lidThickness+slidingSkirtDepth-0.5);
 		}
 		translate([0,0,lidThickness])
 		linear_extrude(height=slidingSkirtDepth+0.01)
 		slidingOutline(slidingSkirtThickness,open=true);
 		slidingRailEnvelope(lidThickness+slidingSkirtDepth/3,
 							slidingSkirtThickness,slidingVerticalClearance,open=true);
-		slidingGripCuts(slidingEdgeChamfer+0.5,lidThickness+slidingSkirtDepth-0.5);
+		slidingLockCuts();
 		if (withNotch)
 			translate([boxLength-3,boxWidth/2-5,lidThickness+slidingSkirtDepth-1.5])
 			round_cube(l=6,w=10,h=1.51,r=2,$fn=32);
